@@ -1,5 +1,5 @@
 import { HttpApi, OpenApi } from "effect/http-api";
-import { ProductsApi } from "./features/products/ProductsApi.ts";
+import { AdminProductsApi, ProductsApi } from "./features/products/ProductsApi.ts";
 import { RequestValidation } from "./shared/errors.ts";
 
 /**
@@ -8,6 +8,7 @@ import { RequestValidation } from "./shared/errors.ts";
  */
 export class Api extends HttpApi.make("checkout-rewards")
   .add(ProductsApi)
+  .add(AdminProductsApi)
   .middleware(RequestValidation)
   .prefix("/api")
   .annotateMerge(

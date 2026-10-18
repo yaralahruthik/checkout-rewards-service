@@ -86,6 +86,27 @@ This file is written incrementally as the service is built. Sections for invaria
 
 **Why:** Without the middleware, Effect returns an empty 400 for invalid input, which tells a client nothing. Declaring the middleware on the API adds `VALIDATION_ERROR` to every endpoint's documented responses automatically.
 
+## Decision: Administrative operations — under `/api/admin`, with no authentication
+
+**Context:** Some operations belong to the store operator, not shoppers. The assignment has no users or login, but evaluators need to drive these operations (for example, changing a price between add-to-cart and checkout).
+
+**Choice:**
+
+- These operations are administrative:
+  - updating a product's price and/or inventory (`PATCH /api/admin/products/{id}`);
+  - generating coupons, listing coupons, listing orders, and the report, which later tickets add.
+- Shopper operations stay public: the catalog, carts, checkout, and reading an order by id.
+- Each administrative group ends with `.prefix("/admin").middleware(AdminAuth)`. `AdminAuth` (`apps/api/src/shared/admin.ts`) is the single seam for authentication. Today it passes every request through.
+- A product update takes absolute values, not deltas. `unitPriceCents` and `inventory` are both optional, but at least one is required. Each must be a non-negative integer.
+
+**Why:**
+
+- Authentication would add credentials to every evaluator request and to the SPA, without exercising any of the invariants the assignment is about.
+- Grouping the routes still makes them easy to protect later, by code or at a gateway by path. To add auth, give `AdminAuth` a security scheme and a 401 error, then check the credential in `AdminAuthLive`. No endpoint or handler changes, and the OpenAPI document picks up the scheme automatically.
+- Absolute values make an update safe to retry: sending the same request twice leaves the same state. A delta ("add 5 units") would double-apply on retry.
+
+**Consequences:** Anyone who can reach the API can change prices and stock. This is acceptable for a local demo and is not acceptable in production.
+
 ## Configuration
 
 `n` and `x` are read from `COUPON_EVERY_N_ORDERS` (default 5, integer ≥ 1) and `COUPON_DISCOUNT_PERCENT` (default 10, integer 1–100). `DATABASE_PATH` and `PORT` are also read from the environment. Startup loads all of them through one validated `Config`, so an invalid value stops the process before it listens.
