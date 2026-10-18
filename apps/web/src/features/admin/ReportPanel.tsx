@@ -1,13 +1,7 @@
 import { useAdminReportGetReport } from "@/api/generated/admin-report/admin-report";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCents } from "@/lib/money";
-
-const Figure = ({ label, value }: { readonly label: string; readonly value: string }) => (
-  <div className="rounded-md border p-3">
-    <p className="text-sm text-muted-foreground">{label}</p>
-    <p className="text-lg font-semibold tabular-nums">{value}</p>
-  </div>
-);
+import { Figure } from "./Figure";
 
 /** The read-only report. The API computes it on every request, so refetching is free. */
 export const ReportPanel = () => {

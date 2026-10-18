@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CouponsPanel } from "./CouponsPanel";
 import { OrdersPanel } from "./OrdersPanel";
 import { ProductEditor } from "./ProductEditor";
+import { RacePanel } from "./RacePanel";
 import { ReportPanel } from "./ReportPanel";
 
 const Section = ({ title, children }: { readonly title: string; readonly children: ReactNode }) => (
@@ -26,6 +27,9 @@ export const AdminPage = () => (
     </Section>
     <Section title="Products">
       <ProductEditor />
+    </Section>
+    <Section title="Race it">
+      <RacePanel />
     </Section>
     <Section title="Coupons">
       <CouponsPanel />

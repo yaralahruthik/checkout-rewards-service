@@ -1,3 +1,13 @@
+## Demo: "Race it"
+
+The admin page (`/admin` in the SPA, started with `pnpm dev`) has a **Race it** panel that shows the no-oversell guarantee holding live:
+
+1. Set **Parallel checkouts** (default 10) and **Starting stock** (default 3).
+2. Press **Race it**. The panel sets the Limited Edition Keycap Set's inventory to the starting stock through the admin product update. It then creates one fresh cart per checkout, each holding one unit, and fires every checkout at once.
+3. The tally shows the successes, the `INSUFFICIENT_INVENTORY` rejections, any other errors by code, and the product's final inventory, which must equal starting stock minus successes and never go below zero.
+
+The panel uses only the public and admin API endpoints. The race's orders are real: they appear in the order list and the report, and they count towards coupon milestones. A browser opens only about six HTTP/1.1 connections per origin, so not all checkouts overlap at once. It is a demonstration, not a test. The oversell race test in the API suite guards the invariant.
+
 #Full-Stack Engineer
 
 ## Build a Reliable Checkout and Rewards Service
