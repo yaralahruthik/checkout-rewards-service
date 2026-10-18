@@ -196,6 +196,51 @@ After a successful checkout, `GET /api/carts/{id}` shows `orderId`, and `GET /ap
 
 **Consequences:** A retry that changes the coupon cannot "fix" an order: the shopper needs a new cart. The OpenAPI document marks the checkout body as required, because Effect's generator does, but the server accepts an empty body; the `CheckoutRequest` description says so.
 
+## Decision: Coupon generation — lazy, counted from orders, one guarded insert
+
+**Context:** Every n-th successful order makes one coupon for x% off available. Administrators generate it, and double-clicks, retries and concurrent requests must never issue two coupons for one milestone.
+
+**Options considered:**
+
+- Eager: checkout inserts the coupon in the same transaction as the n-th order.
+- Milestones from order sequence ids (the n-th id, 2n-th id, ...).
+- Lazy: `POST /api/admin/coupons/generate` issues the coupon on request, with milestones derived from `COUNT(orders)` and `COUNT(coupons)`.
+
+**Choice:** Lazy generation (`apps/api/src/features/coupons/`).
+
+- **The next milestone is (coupons generated + 1) × n.** It is eligible once `COUNT(orders)` has reached it. Every successful order counts, including discounted ones. Each request issues at most one coupon, so skipped milestones are issued oldest first, one per request: with 10 orders and n = 5, two requests issue milestones 5 and 10, and a third is refused.
+- **One statement decides and writes:**
+  ```sql
+  INSERT INTO coupons (code, milestone_order_count, discount_percent, created_at)
+  SELECT ?, next.milestone, ?, ?
+  FROM (SELECT (COUNT(*) + 1) * n AS milestone FROM coupons) AS next
+  WHERE (SELECT COUNT(*) FROM orders) >= next.milestone
+  ON CONFLICT (milestone_order_count) DO NOTHING
+  RETURNING ...
+  ```
+  No row back means no milestone is eligible, and the request gets `409 NO_ELIGIBLE_MILESTONE` with `orderCount` and `nextMilestoneOrderCount` in `details`. Those are read after the refusal, so a request that lost a race reports the milestone after the one the winner took.
+- **A coupon stores** its code, its milestone order count (`UNIQUE`), the discount percent copied from config at generation, and a created timestamp. The code is `SAVE<x>-` plus 8 Crockford base32 characters (40 bits from `crypto.getRandomValues`, behind the `Ids` reference) and is the primary key. The redemption columns (`redeemed_order_id UNIQUE`, `redeemed_at`) exist from the start and stay null until ticket 07.
+- **`GET /api/admin/coupons`** lists every coupon, newest milestone first, with `status` `AVAILABLE` or `REDEEMED` derived from `redeemed_order_id`.
+
+| Invariant                | Guard in the statement                                | Constraint in the schema         |
+| ------------------------ | ----------------------------------------------------- | -------------------------------- |
+| One coupon per milestone | the milestone is computed and checked in the `INSERT` | `UNIQUE (milestone_order_count)` |
+| Unique codes             | —                                                     | `code` is the primary key        |
+
+**Why:**
+
+- **Lazy, not eager.** Generation stays out of checkout, the hottest and most delicate transaction, and a generation bug cannot fail an order. It is also what the assignment's admin API asks for. The cost is that a milestone is only rewarded when someone asks, which is acceptable for an admin-driven reward.
+- **`COUNT(orders)`, not sequence ids.** A sequence can skip values (on Postgres a rolled-back insert still consumes its id, and every failed checkout rolls back), so "the order with id 5n" might never exist. A count of committed orders has no gaps.
+- **Percent snapshot per coupon.** A coupon is a promise made when it was issued. Copying x onto the row means changing `COUPON_DISCOUNT_PERCENT` later never changes what an issued coupon is worth; the code's `SAVE<x>-` prefix matches the snapshot.
+- **Bearer coupons without expiry.** There are no accounts to bind a coupon to, and the spec gives no expiry. Whoever holds the code can redeem it once (ticket 07 enforces once). Adding expiry later is a nullable `expires_at` column and one more condition on the redemption update.
+- **Portable to Postgres under READ COMMITTED.** Two concurrent statements there can both see the same coupon count and pick the same milestone. The second blocks on the unique index entry the first inserted, then sees the conflict once the first commits; `DO NOTHING` turns that into "no row", so the loser is refused rather than erroring. No serializable isolation or retry loop is needed.
+
+**What the race test does and does not prove:** test 5 (`coupons.test.ts`) fires five concurrent generate requests at exactly one eligible milestone and asserts one `201` and four `NO_ELIGIBLE_MILESTONE`, then that a sixth request before the next milestone is refused. A mutation check showed its limit: splitting the count read from the insert into two statements _and_ dropping the unique constraint still passed, because on the in-memory SQLite client the requests did not interleave between the two statements. So the test pins the observable behaviour, but the guarantee against over-issuing rests on the single statement and the unique constraint, argued above, not on the test.
+
+**Changing n:** future milestones are reinterpreted as (coupons generated + 1) × new n; issued coupons are unaffected. This is documented, not engineered. Two consequences follow. Raising n postpones the next coupon (with 2 coupons and n changed from 5 to 10, the next milestone is 30, not 15). Lowering n can make the next milestone equal one already issued (with 4 coupons at 5–20 and n changed to 2, the next milestone is 10). The unique constraint then refuses it permanently, and generation answers `NO_ELIGIBLE_MILESTONE` forever. Recovering would need milestones computed from the highest issued milestone instead of the count, which is the change to make if n ever becomes runtime-configurable.
+
+**Consequences:** Generation is safe to call any number of times, concurrently. A 40-bit code collision is not retried: it fails the request with a 500 (primary-key violation) and the next request succeeds. With at most one coupon per n orders, the chance is negligible.
+
 ## Configuration
 
 `n` and `x` are read from `COUPON_EVERY_N_ORDERS` (default 5, integer ≥ 1) and `COUPON_DISCOUNT_PERCENT` (default 10, integer 1–100). `DATABASE_PATH` and `PORT` are also read from the environment. Startup loads all of them through one validated `Config`, so an invalid value stops the process before it listens.

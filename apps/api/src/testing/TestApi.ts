@@ -8,6 +8,7 @@ import {
   HttpServerResponse,
 } from "effect/http";
 import { ApiRoutes } from "../http.ts";
+import { AppConfig } from "../shared/config.ts";
 import * as Database from "../shared/db/Database.ts";
 
 /**
@@ -15,7 +16,8 @@ import * as Database from "../shared/db/Database.ts";
  * in-memory database, and provides an `HttpClient` that talks to them.
  *
  * Provide it per test (`Effect.provide(TestApi)`) so each test gets its own
- * database. Requests use paths such as `/api/products`.
+ * database. Requests use paths such as `/api/products`. Coupons are configured
+ * with n = 5 and x = 10, the defaults, whatever the environment says.
  */
 export const TestApi: Layer.Layer<HttpClient.HttpClient> = Layer.effect(
   HttpClient.HttpClient,
@@ -34,6 +36,18 @@ export const TestApi: Layer.Layer<HttpClient.HttpClient> = Layer.effect(
     ).pipe(HttpClient.mapRequest(HttpClientRequest.prependUrl("http://localhost")));
   }),
 ).pipe(
-  Layer.provide([Database.layer({ filename: ":memory:" }), HttpServer.layerServices]),
+  Layer.provide([
+    Database.layer({ filename: ":memory:" }),
+    HttpServer.layerServices,
+    Layer.succeed(
+      AppConfig,
+      AppConfig.of({
+        milestoneInterval: 5,
+        discountPercent: 10,
+        databasePath: ":memory:",
+        port: 0,
+      }),
+    ),
+  ]),
   Layer.orDie,
 );

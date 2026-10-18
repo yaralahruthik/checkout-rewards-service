@@ -526,6 +526,87 @@
           "required": true
         }
       }
+    },
+    "/api/admin/coupons/generate": {
+      "post": {
+        "tags": [
+          "Admin: coupons"
+        ],
+        "operationId": "adminCoupons.generateCoupon",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "201": {
+            "description": "A bearer coupon: anyone holding the code can redeem it once. It never expires, and its percent never changes after generation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Coupon"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not match the endpoint's schema.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorEncoded"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Every milestone reached so far already has its coupon. `nextMilestoneOrderCount` is the order count at which the next one becomes available.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoEligibleMilestoneEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Issues one coupon for the oldest milestone that has been reached but not rewarded. Every n-th successful order is a milestone. Safe to repeat and to call concurrently: each milestone gets exactly one coupon, and every other request is refused.",
+        "summary": "Generate a coupon"
+      }
+    },
+    "/api/admin/coupons": {
+      "get": {
+        "tags": [
+          "Admin: coupons"
+        ],
+        "operationId": "adminCoupons.listCoupons",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Coupon_1"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not match the endpoint's schema.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Every coupon with its status, newest milestone first.",
+        "summary": "List coupons"
+      }
     }
   },
   "components": {
@@ -599,6 +680,177 @@
           "details"
         ],
         "additionalProperties": false
+      },
+      "Coupon_1": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/CouponCode"
+          },
+          "milestoneOrderCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "discountPercent": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "status": {
+            "$ref": "#/components/schemas/CouponStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "When the coupon was generated (ISO 8601, UTC)."
+          },
+          "redeemedOrderId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "redeemedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "When the coupon was redeemed (ISO 8601, UTC)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "milestoneOrderCount",
+          "discountPercent",
+          "status",
+          "createdAt",
+          "redeemedOrderId",
+          "redeemedAt"
+        ],
+        "additionalProperties": false,
+        "description": "A bearer coupon: anyone holding the code can redeem it once. It never expires, and its percent never changes after generation."
+      },
+      "OrderId": {
+        "type": "string",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "format": "uuid",
+        "description": "A UUIDv7."
+      },
+      "CouponStatus": {
+        "type": "string",
+        "enum": [
+          "AVAILABLE",
+          "REDEEMED"
+        ]
+      },
+      "CouponCode": {
+        "type": "string",
+        "description": "`SAVE<x>-` followed by 8 Crockford base32 characters, for example `SAVE10-7KQ2M9XA`."
+      },
+      "NoEligibleMilestoneEncoded": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "NO_ELIGIBLE_MILESTONE"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "properties": {
+              "orderCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "nextMilestoneOrderCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "orderCount",
+              "nextMilestoneOrderCount"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "additionalProperties": false
+      },
+      "Coupon": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/CouponCode"
+          },
+          "milestoneOrderCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "discountPercent": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "status": {
+            "$ref": "#/components/schemas/CouponStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "When the coupon was generated (ISO 8601, UTC)."
+          },
+          "redeemedOrderId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "redeemedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "When the coupon was redeemed (ISO 8601, UTC)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "milestoneOrderCount",
+          "discountPercent",
+          "status",
+          "createdAt",
+          "redeemedOrderId",
+          "redeemedAt"
+        ],
+        "additionalProperties": false,
+        "description": "A bearer coupon: anyone holding the code can redeem it once. It never expires, and its percent never changes after generation."
       },
       "ProductNotFoundEncoded": {
         "type": "object",
@@ -789,12 +1041,6 @@
         ],
         "additionalProperties": false,
         "description": "The product's name and price as they were at checkout."
-      },
-      "OrderId": {
-        "type": "string",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "format": "uuid",
-        "description": "A UUIDv7."
       },
       "CouponInvalidEncoded": {
         "type": "object",
@@ -1274,6 +1520,9 @@
     },
     {
       "name": "Admin: products"
+    },
+    {
+      "name": "Admin: coupons"
     }
   ]
 }

@@ -1,6 +1,7 @@
 import { HttpApi, OpenApi } from "effect/http-api";
 import { CartsApi } from "./features/carts/CartsApi.ts";
 import { CheckoutApi } from "./features/checkout/CheckoutApi.ts";
+import { AdminCouponsApi } from "./features/coupons/CouponsApi.ts";
 import { OrdersApi } from "./features/orders/OrdersApi.ts";
 import { AdminProductsApi, ProductsApi } from "./features/products/ProductsApi.ts";
 import { RequestValidation } from "./shared/errors.ts";
@@ -15,6 +16,7 @@ export class Api extends HttpApi.make("checkout-rewards")
   .add(CheckoutApi)
   .add(OrdersApi)
   .add(AdminProductsApi)
+  .add(AdminCouponsApi)
   .middleware(RequestValidation)
   .prefix("/api")
   .annotateMerge(

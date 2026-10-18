@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CouponsPanel } from "./CouponsPanel";
 import { ProductEditor } from "./ProductEditor";
 
 /**
@@ -14,6 +15,14 @@ export const AdminPage = () => (
       </CardHeader>
       <CardContent>
         <ProductEditor />
+      </CardContent>
+    </Card>
+    <Card>
+      <CardHeader>
+        <CardTitle>Coupons</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <CouponsPanel />
       </CardContent>
     </Card>
   </main>
