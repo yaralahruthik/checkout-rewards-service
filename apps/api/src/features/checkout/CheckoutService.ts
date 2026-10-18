@@ -14,19 +14,33 @@ import {
 import { ProductRepository } from "../products/ProductRepository.ts";
 import {
   CartAlreadyCheckedOut,
+  type CheckoutRequest,
+  CouponInvalid,
   EmptyCart,
+  PriceChanged,
   cartAlreadyCheckedOut,
+  couponInvalid,
   emptyCart,
+  priceChanged,
 } from "./CheckoutApi.ts";
+
+/** `replayed` when the cart was already checked out and `order` is the one it produced. */
+export type CheckoutResult = { readonly order: Order; readonly replayed: boolean };
 
 export class CheckoutService extends Context.Service<
   CheckoutService,
   {
     readonly checkout: (
       id: CartId,
+      request: CheckoutRequest,
     ) => Effect.Effect<
-      Order,
-      CartNotFound | CartAlreadyCheckedOut | EmptyCart | InsufficientInventory
+      CheckoutResult,
+      | CartNotFound
+      | CartAlreadyCheckedOut
+      | EmptyCart
+      | PriceChanged
+      | InsufficientInventory
+      | CouponInvalid
     >;
   }
 >()("api/checkout/CheckoutService") {
@@ -38,7 +52,10 @@ export class CheckoutService extends Context.Service<
       const products = yield* ProductRepository;
       const orders = yield* OrderRepository;
 
-      const placeOrder = Effect.fn("CheckoutService.placeOrder")(function* (cartId: CartId) {
+      const placeOrder = Effect.fn("CheckoutService.placeOrder")(function* (
+        cartId: CartId,
+        request: CheckoutRequest,
+      ) {
         // 1. Claim the cart. Only one checkout can move it out of OPEN.
         if (!(yield* carts.claim(cartId))) {
           const cart = yield* carts.findById(cartId);
@@ -49,6 +66,15 @@ export class CheckoutService extends Context.Service<
           if (orderId === null) {
             // Claim and order insert commit together, so this cannot happen.
             return yield* Effect.die(`Cart ${cartId} is checked out but has no order`);
+          }
+          // A retry of the original request replays its order. No order has
+          // a coupon yet, so only a request without one matches.
+          if (request.couponCode === undefined) {
+            const order = yield* orders.findById(orderId);
+            if (Option.isNone(order)) {
+              return yield* Effect.die(`Order ${orderId} of cart ${cartId} does not exist`);
+            }
+            return { order: order.value, replayed: true };
           }
           return yield* cartAlreadyCheckedOut(cartId, orderId);
         }
@@ -69,6 +95,12 @@ export class CheckoutService extends Context.Service<
         }));
         const subtotal = subtotalCents(lines);
 
+        // 4. Refuse a subtotal the shopper did not see.
+        const { expectedSubtotalCents } = request;
+        if (expectedSubtotalCents !== undefined && expectedSubtotalCents !== subtotal) {
+          return yield* priceChanged({ expectedSubtotalCents, subtotalCents: subtotal, lines });
+        }
+
         // 5. Take the stock, in product-id order. Keep going past a short line
         // so the error lists every one; the rollback undoes the others.
         const short: Array<ShortLine> = [];
@@ -88,6 +120,11 @@ export class CheckoutService extends Context.Service<
           return yield* insufficientInventory(short);
         }
 
+        // 6. Redeem the coupon. None exist yet, so every code is unknown.
+        if (request.couponCode !== undefined) {
+          return yield* couponInvalid(request.couponCode);
+        }
+
         // 7. Record the order and its snapshots.
         const ids = yield* Ids;
         const order: Order = {
@@ -99,12 +136,14 @@ export class CheckoutService extends Context.Service<
           lines,
         };
         yield* orders.insert({ ...order, cartId });
-        return order;
+        return { order, replayed: false };
       });
 
       // 8. Commit, or roll back every write above if any step failed.
-      const checkout = (cartId: CartId) =>
-        sql.withTransaction(placeOrder(cartId)).pipe(Effect.catchTag("SqlError", Effect.die));
+      const checkout = (cartId: CartId, request: CheckoutRequest) =>
+        sql
+          .withTransaction(placeOrder(cartId, request))
+          .pipe(Effect.catchTag("SqlError", Effect.die));
 
       return CheckoutService.of({ checkout });
     }),

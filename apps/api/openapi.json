@@ -194,11 +194,18 @@
             }
           },
           "409": {
-            "description": "A requested quantity exceeds the product's available inventory.",
+            "description": "The cart is checked out, so its lines cannot change. | A requested quantity exceeds the product's available inventory.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InsufficientInventoryEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CartNotOpenEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InsufficientInventoryEncoded"
+                    }
+                  ]
                 }
               }
             }
@@ -271,6 +278,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The cart is checked out, so its lines cannot change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CartNotOpenEncoded"
+                }
+              }
+            }
           }
         },
         "description": "Deletes the product's line. Removing a product that is not in the cart changes nothing, so retrying is safe.",
@@ -295,6 +312,16 @@
         ],
         "security": [],
         "responses": {
+          "200": {
+            "description": "A placed order. Its lines and totals never change after checkout.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order_1"
+                }
+              }
+            }
+          },
           "201": {
             "description": "A placed order. Its lines and totals never change after checkout.",
             "content": {
@@ -326,13 +353,16 @@
             }
           },
           "409": {
-            "description": "The cart was already checked out; `orderId` is the order it produced. | A requested quantity exceeds the product's available inventory.",
+            "description": "The cart was already checked out; `orderId` is the order it produced. | The current subtotal differs from `expectedSubtotalCents`. Nothing changed: the cart is still open. Confirm the new totals and check out again with the new subtotal. | A requested quantity exceeds the product's available inventory.",
             "content": {
               "application/json": {
                 "schema": {
                   "anyOf": [
                     {
                       "$ref": "#/components/schemas/CartAlreadyCheckedOutEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PriceChangedEncoded"
                     },
                     {
                       "$ref": "#/components/schemas/InsufficientInventoryEncoded"
@@ -343,18 +373,42 @@
             }
           },
           "422": {
-            "description": "The cart has no lines, so there is nothing to order.",
+            "description": "The cart has no lines, so there is nothing to order. | No coupon has the given code.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EmptyCartEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/EmptyCartEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CouponInvalidEncoded"
+                    }
+                  ]
                 }
               }
             }
           }
         },
         "description": "In one transaction: closes the cart, prices its lines at current prices, takes the stock, and records the order with snapshots of every line. If any step fails, nothing changes: the cart stays open and stock is untouched.",
-        "summary": "Check out a cart"
+        "summary": "Check out a cart",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CheckoutRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        }
       }
     },
     "/api/orders/{id}": {
@@ -742,6 +796,38 @@
         "format": "uuid",
         "description": "A UUIDv7."
       },
+      "CouponInvalidEncoded": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "COUPON_INVALID"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "properties": {
+              "couponCode": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "couponCode"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "additionalProperties": false
+      },
       "EmptyCartEncoded": {
         "type": "object",
         "properties": {
@@ -830,6 +916,49 @@
           "productId",
           "requestedQuantity",
           "availableInventory"
+        ],
+        "additionalProperties": false
+      },
+      "PriceChangedEncoded": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "PRICE_CHANGED"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "properties": {
+              "expectedSubtotalCents": {
+                "$ref": "#/components/schemas/Cents"
+              },
+              "subtotalCents": {
+                "$ref": "#/components/schemas/Cents"
+              },
+              "lines": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OrderLine"
+                }
+              }
+            },
+            "required": [
+              "expectedSubtotalCents",
+              "subtotalCents",
+              "lines"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "details"
         ],
         "additionalProperties": false
       },
@@ -943,6 +1072,51 @@
         "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
         "format": "uuid",
         "description": "A UUIDv7. Anyone holding it can read and change the cart."
+      },
+      "CheckoutRequest": {
+        "type": "object",
+        "properties": {
+          "couponCode": {
+            "type": "string"
+          },
+          "expectedSubtotalCents": {
+            "$ref": "#/components/schemas/Cents"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Both fields are optional, and so is the body. A retry must send the same coupon code (or none) to replay the order."
+      },
+      "CartNotOpenEncoded": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "CART_NOT_OPEN"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "properties": {
+              "cartId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cartId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "additionalProperties": false
       },
       "Cart_1": {
         "type": "object",

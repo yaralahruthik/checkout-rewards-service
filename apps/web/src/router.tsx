@@ -5,6 +5,7 @@ import {
   createRoute,
   createRouter,
   useParams,
+  useSearch,
 } from "@tanstack/react-router";
 import { AdminPage } from "@/features/admin/AdminPage";
 import { CartPage } from "@/features/cart/CartPage";
@@ -47,7 +48,15 @@ const routeTree = rootRoute.addChildren([
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/orders/$orderId",
-    component: () => <OrderPage orderId={useParams({ from: "/orders/$orderId" }).orderId} />,
+    // `cartId`, when present, is the cart that placed the order: the page offers to retry its checkout.
+    validateSearch: (search: Record<string, unknown>): { cartId?: string } =>
+      typeof search.cartId === "string" ? { cartId: search.cartId } : {},
+    component: () => (
+      <OrderPage
+        orderId={useParams({ from: "/orders/$orderId" }).orderId}
+        cartId={useSearch({ from: "/orders/$orderId" }).cartId}
+      />
+    ),
   }),
 ]);
 

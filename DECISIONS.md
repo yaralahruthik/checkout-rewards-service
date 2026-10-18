@@ -139,14 +139,16 @@ This file is written incrementally as the service is built. Sections for invaria
 - A pessimistic lock (`SELECT ... FOR UPDATE`) on every product, then plain writes.
 - One transaction in which every write is a conditional update whose guard is in the statement itself, each backed by a schema constraint.
 
-**Choice:** The last. `POST /api/carts/{id}/checkout` (`apps/api/src/features/checkout/CheckoutService.ts`) runs inside `sql.withTransaction`, in this order. The step numbers follow SPEC.md; steps 4 (price guard) and 6 (coupon redemption) arrive with tickets 05 and 07.
+**Choice:** The last. `POST /api/carts/{id}/checkout` (`apps/api/src/features/checkout/CheckoutService.ts`) runs inside `sql.withTransaction`, in this order. The step numbers follow SPEC.md and the comments in the code.
 
-1. **Claim the cart:** `UPDATE carts SET status = 'CHECKED_OUT' WHERE id = ? AND status = 'OPEN'`. No row changed means the cart is missing (`404 CART_NOT_FOUND`) or already checked out (`409 CART_ALREADY_CHECKED_OUT` with the existing `orderId`; ticket 05 turns a matching retry into a replay).
+1. **Claim the cart:** `UPDATE carts SET status = 'CHECKED_OUT' WHERE id = ? AND status = 'OPEN'`. No row changed means the cart is missing (`404 CART_NOT_FOUND`) or already checked out, which is a replay (`200` with the existing order) or a conflict (`409 CART_ALREADY_CHECKED_OUT` with the existing `orderId`); see the next decision.
 2. **Load the lines** in product-id order. None → `422 EMPTY_CART`.
 3. **Price them** at current prices: line total = unit price × quantity, subtotal = sum of line totals, all integer cents.
-4. **Take the stock**, line by line in product-id order: `UPDATE products SET available_inventory = available_inventory - q WHERE id = ? AND available_inventory >= q`. A line that changes no row is short; its current inventory is re-read for the error. Every line is attempted, so `409 INSUFFICIENT_INVENTORY` lists every short line with requested and available quantities.
-5. **Insert the order and its line snapshots** (product name, unit price, quantity, line total copied from step 3). Orders are read back from the snapshots only, never joined to products, so later catalog changes do not alter them.
-6. **Commit.** Any failure in an earlier step (a typed error or a defect) rolls the whole transaction back: the cart is `OPEN` again and no inventory moved.
+4. **Price guard:** an `expectedSubtotalCents` that differs from the subtotal → `409 PRICE_CHANGED`; see the next decision.
+5. **Take the stock**, line by line in product-id order: `UPDATE products SET available_inventory = available_inventory - q WHERE id = ? AND available_inventory >= q`. A line that changes no row is short; its current inventory is re-read for the error. Every line is attempted, so `409 INSUFFICIENT_INVENTORY` lists every short line with requested and available quantities.
+6. **Redeem the coupon:** a stub until ticket 07. No coupons exist yet, so any `couponCode` is refused as `422 COUPON_INVALID`.
+7. **Insert the order and its line snapshots** (product name, unit price, quantity, line total copied from step 3). Orders are read back from the snapshots only, never joined to products, so later catalog changes do not alter them.
+8. **Commit.** Any failure in an earlier step (a typed error or a defect) rolls the whole transaction back: the cart is `OPEN` again and no inventory moved.
 
 After a successful checkout, `GET /api/carts/{id}` shows `orderId`, and `GET /api/orders/{id}` returns the order.
 
@@ -160,7 +162,7 @@ After a successful checkout, `GET /api/carts/{id}` shows `orderId`, and `GET /ap
 
 - **The guard and the write are one statement,** so there is no gap between "is there enough?" and "take it" for another checkout to slip into. The constraint is the backstop: if a future change dropped the guard, the database would refuse the write instead of storing an oversold row.
 - **SQLite serialization is not relied upon.** `@effect/sql-sqlite-node` runs one connection behind a semaphore and starts transactions with `BEGIN IMMEDIATE`, so checkouts already run one at a time. That is a second line of defence, and the design holds without it.
-- **Portable to Postgres under READ COMMITTED.** There, a conditional `UPDATE` locks the row it changes. A concurrent `UPDATE` of the same row waits for that lock, then re-evaluates its `WHERE` against the newly committed row before writing. Two checkouts for the last unit therefore cannot both pass `available_inventory >= 1`, and two claims of the same cart cannot both see `status = 'OPEN'`. No `SERIALIZABLE` isolation, retry loop or `FOR UPDATE` is needed. The plain reads in steps 2–3 can be momentarily stale under READ COMMITTED, but correctness never depends on them: stock is decided by the guarded decrement, and the price read is the price snapshotted (ticket 05's guard rejects a subtotal the shopper did not see).
+- **Portable to Postgres under READ COMMITTED.** There, a conditional `UPDATE` locks the row it changes. A concurrent `UPDATE` of the same row waits for that lock, then re-evaluates its `WHERE` against the newly committed row before writing. Two checkouts for the last unit therefore cannot both pass `available_inventory >= 1`, and two claims of the same cart cannot both see `status = 'OPEN'`. No `SERIALIZABLE` isolation, retry loop or `FOR UPDATE` is needed. The plain reads in steps 2–3 can be momentarily stale under READ COMMITTED, but correctness never depends on them: stock is decided by the guarded decrement, and the price read is the price snapshotted (the price guard rejects a subtotal the shopper did not see).
 - **Lock ordering.** Decrementing in product-id order means two checkouts that share products always lock those rows in the same order, so on Postgres they queue instead of deadlocking. It makes no difference on SQLite's single writer.
 - **Rollback rather than compensation.** Continuing past a short line and then failing is safe because nothing is visible until commit; undoing the earlier decrements is the transaction's job, not the code's.
 
@@ -169,6 +171,30 @@ After a successful checkout, `GET /api/carts/{id}` shows `orderId`, and `GET /ap
 **Payment:** there is no payment integration. A committed checkout is treated as a successful payment, which keeps the transaction purely local. A real integration cannot charge a card inside a database transaction (the charge cannot be rolled back, and holding locks across a network call blocks other shoppers). The deferred design: commit the order as `PENDING` with stock taken, write a "charge" message to an outbox table in the same transaction, have a worker call the payment provider with the order id as its idempotency key, then mark the order `PAID` or compensate (cancel it and return the stock).
 
 **Consequences:** Stock is decided at checkout, not at add-to-cart, so a shopper can lose a race they could not see coming; the error says exactly which lines to fix. Each product row is a contention point under heavy demand for one item, which is acceptable at this scale.
+
+## Decision: Checkout replay and the price guard — the cart is the idempotency key
+
+**Context:** Clients retry checkout after a timeout without knowing whether the first attempt committed. A retry must return the original order, never place a second one or take stock twice. Separately, a price can change between the shopper viewing the cart and checking out, and the shopper must never be charged a subtotal they did not see.
+
+**Options considered:**
+
+- A client-supplied `Idempotency-Key` header, with stored request fingerprints and responses.
+- The cart itself as the key: a cart produces at most one order, so "checkout of cart X" can only ever mean one order.
+
+**Choice:** The cart. `POST /api/carts/{id}/checkout` takes an optional body `{ couponCode?, expectedSubtotalCents? }` (an empty body is the same as `{}`).
+
+- **Replay vs conflict.** When the claim changes no row because the cart is `CHECKED_OUT`, the request is compared with the one that placed the order. Same coupon code (both absent, until ticket 07 stores codes on orders) → **replay**: `200` with the existing order, read back from its snapshots. A different coupon code → `409 CART_ALREADY_CHECKED_OUT` with `orderId` in `details`. The first checkout answers `201`, so a client can tell "placed now" from "already placed". `expectedSubtotalCents` is ignored on replay: prices may have moved since, and the order already records what was charged.
+- **Only the coupon code is compared.** It is the only input that changes what the order is. The cart's lines cannot differ, because a checked-out cart cannot change: `PUT` and `DELETE` on its items return `409 CART_NOT_OPEN`. That guard is in the write itself (`INSERT ... SELECT ... FROM carts WHERE id = ? AND status = 'OPEN'`, and `DELETE ... AND EXISTS (... status = 'OPEN')`), not a status read beforehand, so a checkout cannot land between a check and the write.
+- **Price guard.** After pricing the lines, if `expectedSubtotalCents` is present and differs from the computed subtotal, checkout fails with `409 PRICE_CHANGED`, carrying the expected subtotal, the new subtotal and the newly priced lines. The transaction rolls back, so the cart stays `OPEN` and no stock moves. The SPA always sends the subtotal on screen; on `PRICE_CHANGED` it shows the new totals and, on confirmation, checks out again with the new value. The field is optional so a plain API client can still check out, accepting current prices.
+
+**Why:**
+
+- **The cart is a natural idempotency key.** The conditional claim plus `UNIQUE (cart_id)` on `orders` already guarantee one order per cart under any number of concurrent retries (test 2: ten concurrent checkouts of one cart produce one `201`, nine `200`s with the same order id, and one stock decrement). A header would add a second key, storage for fingerprints and responses, and an expiry policy, all to protect an invariant the schema already enforces.
+- **A different request is a conflict, not a replay.** Returning the old order to a request with a different coupon would tell the client its coupon was applied when it was not.
+- **When a header would become necessary:** as soon as one checkout request can create something that has no natural key. Examples are reorders (several orders from one cart), checkout without a server-side cart (lines in the request body), or a side effect outside the database, such as a payment charge, that must be deduplicated across a retry. Then the client's key, stored with a fingerprint of the request under a unique constraint, is the only thing that identifies "the same attempt".
+- **Why the subtotal, not the total, is guarded:** the client never computes discounts. The discount is a deterministic function of the subtotal and the coupon (SPEC.md, Money), so a matching subtotal means the total is the one the shopper would expect for that coupon. Guarding the total would make the client reimplement the rounding rule and drift whenever it changed.
+
+**Consequences:** A retry that changes the coupon cannot "fix" an order: the shopper needs a new cart. The OpenAPI document marks the checkout body as required, because Effect's generator does, but the server accepts an empty body; the `CheckoutRequest` description says so.
 
 ## Configuration
 

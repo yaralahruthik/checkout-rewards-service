@@ -9,7 +9,15 @@ import {
   productNotFound,
 } from "../products/ProductsApi.ts";
 import { ProductRepository } from "../products/ProductRepository.ts";
-import { Cart, CartId, CartNotFound, SetQuantity, cartNotFound } from "./CartsApi.ts";
+import {
+  Cart,
+  CartId,
+  CartNotFound,
+  CartNotOpen,
+  SetQuantity,
+  cartNotFound,
+  cartNotOpen,
+} from "./CartsApi.ts";
 import { CartRepository, type CartRow, type LineRow } from "./CartRepository.ts";
 
 /** Prices the lines at the prices they were read with. */
@@ -38,8 +46,11 @@ export class CartService extends Context.Service<
       id: CartId,
       productId: ProductId,
       request: SetQuantity,
-    ) => Effect.Effect<Cart, CartNotFound | ProductNotFound | InsufficientInventory>;
-    readonly removeItem: (id: CartId, productId: ProductId) => Effect.Effect<Cart, CartNotFound>;
+    ) => Effect.Effect<Cart, CartNotFound | CartNotOpen | ProductNotFound | InsufficientInventory>;
+    readonly removeItem: (
+      id: CartId,
+      productId: ProductId,
+    ) => Effect.Effect<Cart, CartNotFound | CartNotOpen>;
   }
 >()("api/carts/CartService") {
   static readonly layer = Layer.effect(
@@ -73,6 +84,11 @@ export class CartService extends Context.Service<
         { quantity }: SetQuantity,
       ) {
         const cart = yield* find(id);
+        // Answers CART_NOT_OPEN ahead of product and stock errors. The guard
+        // on the write below is what actually enforces it.
+        if (cart.status !== "OPEN") {
+          return yield* cartNotOpen(id);
+        }
         const product = yield* products.findById(productId);
         if (Option.isNone(product)) {
           return yield* productNotFound(productId);
@@ -85,7 +101,9 @@ export class CartService extends Context.Service<
             { productId, requestedQuantity: quantity, availableInventory },
           ]);
         }
-        yield* repository.setQuantity(id, productId, quantity);
+        if (!(yield* repository.setQuantity(id, productId, quantity))) {
+          return yield* cartNotOpen(id);
+        }
         return toCart(cart, yield* repository.lines(id));
       });
 
@@ -94,7 +112,9 @@ export class CartService extends Context.Service<
         productId: ProductId,
       ) {
         const cart = yield* find(id);
-        yield* repository.removeLine(id, productId);
+        if (!(yield* repository.removeLine(id, productId))) {
+          return yield* cartNotOpen(id);
+        }
         return toCart(cart, yield* repository.lines(id));
       });
 

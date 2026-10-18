@@ -248,3 +248,31 @@ it.effect(
       ]);
     }).pipe(Effect.provide(TestApi)),
 );
+
+it.effect("a checked-out cart refuses every change with CART_NOT_OPEN and keeps its lines", () =>
+  Effect.gen(function* () {
+    const cartId = yield* newCartId;
+    yield* setQuantity(cartId, 1, 2);
+    yield* HttpClient.post(`/api/carts/${cartId}/checkout`);
+    const notOpen = {
+      code: "CART_NOT_OPEN",
+      message: `Cart ${cartId} is not open`,
+      details: { cartId },
+    };
+
+    for (const response of [
+      yield* setQuantity(cartId, 1, 5),
+      yield* setQuantity(cartId, 2, 1),
+      yield* setQuantity(cartId, 6, 50),
+      yield* setQuantity(cartId, 999, 1),
+      yield* HttpClient.del(`/api/carts/${cartId}/items/1`),
+      yield* HttpClient.del(`/api/carts/${cartId}/items/2`),
+    ]) {
+      assert.strictEqual(response.status, 409);
+      assert.deepStrictEqual<unknown>(yield* response.json, notOpen);
+    }
+    const cart = yield* getCart(cartId);
+    assert.strictEqual(cart.itemCount, 2);
+    assert.strictEqual(cart.lines.length, 1);
+  }).pipe(Effect.provide(TestApi)),
+);

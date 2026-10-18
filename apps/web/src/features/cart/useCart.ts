@@ -10,7 +10,7 @@ import {
   useCartsSetItemQuantity,
 } from "@/api/generated/carts/carts";
 import { useCheckoutCheckout } from "@/api/generated/checkout/checkout";
-import type { Cart, Order } from "@/api/generated/model";
+import type { Cart, Order, PriceChangedEncodedDetails } from "@/api/generated/model";
 import { getOrdersGetOrderQueryKey } from "@/api/generated/orders/orders";
 import { getProductsListProductsQueryKey } from "@/api/generated/products/products";
 import { toastApiError } from "@/api/toastApiError";
@@ -67,6 +67,9 @@ export const useCart = () => {
     mutation: { onSuccess, onError: toastApiError },
   });
 
+  // The new totals from a PRICE_CHANGED refusal, waiting for the shopper to confirm.
+  const [priceChange, setPriceChange] = useState<PriceChangedEncodedDetails | null>(null);
+
   // Checkout is never retried automatically: a retry should be the shopper's choice.
   const checkoutCart = useCheckoutCheckout<ApiError>({
     mutation: {
@@ -77,22 +80,36 @@ export const useCart = () => {
         void queryClient.invalidateQueries({ queryKey: getProductsListProductsQueryKey() });
         // The cart is closed now: the next item starts a new one.
         writeCartId(null);
-        void navigate({ to: "/orders/$orderId", params: { orderId: order.id } });
+        // The order page keeps the cart id so it can demonstrate a retry.
+        void navigate({
+          to: "/orders/$orderId",
+          params: { orderId: order.id },
+          search: { cartId: id },
+        });
       },
       onError: (error, { id }) => {
-        toastApiError(error);
-        // Stock may have moved: refresh the lines' stock warnings.
+        if (error.body.code === "PRICE_CHANGED") {
+          setPriceChange(error.body.details as PriceChangedEncodedDetails);
+        } else {
+          toastApiError(error);
+        }
+        // Prices or stock moved: refresh the lines and their stock warnings.
         void queryClient.invalidateQueries({ queryKey: getCartsGetCartQueryKey(id) });
       },
     },
   });
 
-  const checkout = () => {
-    if (cartId !== null) checkoutCart.mutate({ id: cartId });
+  /** Sends the subtotal the shopper is looking at, so a price change is refused, not charged. */
+  const checkout = (expectedSubtotalCents: number) => {
+    setPriceChange(null);
+    if (cartId !== null) checkoutCart.mutate({ id: cartId, data: { expectedSubtotalCents } });
   };
 
+  // A stored cart checked out elsewhere (another tab) cannot change: the next item starts a new one.
+  const checkedOut = cart.data?.status === "CHECKED_OUT";
+
   const setQuantity = async (productId: number, quantity: number) => {
-    let id = cartId;
+    let id = checkedOut ? null : cartId;
     if (id === null) {
       setCreating(true);
       try {
@@ -114,7 +131,7 @@ export const useCart = () => {
   };
 
   const quantityOf = (productId: number) =>
-    cart.data?.lines.find((line) => line.productId === productId)?.quantity ?? 0;
+    checkedOut ? 0 : (cart.data?.lines.find((line) => line.productId === productId)?.quantity ?? 0);
 
   const isLoading = cartId !== null && cart.isPending;
 
@@ -134,6 +151,8 @@ export const useCart = () => {
     setQuantity,
     remove,
     checkout,
+    priceChange,
+    dismissPriceChange: () => setPriceChange(null),
     quantityOf,
   };
 };

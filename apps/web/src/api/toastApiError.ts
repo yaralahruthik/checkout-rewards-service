@@ -8,6 +8,9 @@ const titles: Record<string, string> = {
   INSUFFICIENT_INVENTORY: "Not enough stock",
   EMPTY_CART: "Cart is empty",
   CART_ALREADY_CHECKED_OUT: "Cart already checked out",
+  CART_NOT_OPEN: "Cart is checked out",
+  PRICE_CHANGED: "Prices have changed",
+  COUPON_INVALID: "Unknown coupon",
   ORDER_NOT_FOUND: "Order not found",
 };
 

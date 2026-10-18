@@ -4,6 +4,14 @@ import type { CartLine } from "@/api/generated/model";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCents } from "@/lib/money";
@@ -59,6 +67,48 @@ const CartLineForm = ({ line, cart }: { readonly line: CartLine; readonly cart: 
   );
 };
 
+/** Shows the totals checkout found; confirming checks out again with the new subtotal. */
+const PriceChangedDialog = ({ cart }: { readonly cart: CartHandle }) => {
+  const change = cart.priceChange;
+  return (
+    <Dialog open={change !== null} onOpenChange={(open) => open || cart.dismissPriceChange()}>
+      {change !== null && (
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Prices have changed</DialogTitle>
+            <DialogDescription>
+              Your subtotal is now {formatCents(change.subtotalCents)}, not{" "}
+              {formatCents(change.expectedSubtotalCents)}. Nothing has been charged.
+            </DialogDescription>
+          </DialogHeader>
+          <div>
+            {change.lines.map((line) => (
+              <div key={line.productId} className="flex justify-between py-1 text-sm">
+                <span>
+                  {line.productName} · {line.quantity} × {formatCents(line.unitPriceCents)}
+                </span>
+                <span className="tabular-nums">{formatCents(line.lineTotalCents)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between border-t pt-2 font-semibold">
+              <span>New subtotal</span>
+              <span className="tabular-nums">{formatCents(change.subtotalCents)}</span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={cart.dismissPriceChange}>
+              Back to cart
+            </Button>
+            <Button disabled={cart.isPending} onClick={() => cart.checkout(change.subtotalCents)}>
+              Check out for {formatCents(change.subtotalCents)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      )}
+    </Dialog>
+  );
+};
+
 export const CartPage = () => {
   const cart = useCart();
 
@@ -105,13 +155,17 @@ export const CartPage = () => {
               Prices are live: they reflect the current catalog until you check out.
             </p>
             <div className="flex justify-end pt-4">
-              <Button disabled={cart.isPending} onClick={cart.checkout}>
+              <Button
+                disabled={cart.isPending}
+                onClick={() => cart.checkout(cart.data!.subtotalCents)}
+              >
                 Check out
               </Button>
             </div>
           </CardContent>
         </Card>
       )}
+      <PriceChangedDialog cart={cart} />
     </main>
   );
 };

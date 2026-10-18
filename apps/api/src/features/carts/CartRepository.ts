@@ -34,13 +34,20 @@ export class CartRepository extends Context.Service<
     readonly claim: (id: CartId) => Effect.Effect<boolean>;
     /** The cart's lines in product-id order. */
     readonly lines: (id: CartId) => Effect.Effect<ReadonlyArray<LineRow>>;
-    /** Inserts the line, or replaces the quantity of an existing one. */
+    /**
+     * Inserts the line, or replaces the quantity of an existing one, in one
+     * statement guarded by the cart being `OPEN`. `false` when it is not.
+     */
     readonly setQuantity: (
       id: CartId,
       productId: ProductId,
       quantity: number,
-    ) => Effect.Effect<void>;
-    readonly removeLine: (id: CartId, productId: ProductId) => Effect.Effect<void>;
+    ) => Effect.Effect<boolean>;
+    /**
+     * Deletes the line, guarded by the cart being `OPEN`. `false` when it is
+     * not; deleting a line the open cart does not have is a no-op.
+     */
+    readonly removeLine: (id: CartId, productId: ProductId) => Effect.Effect<boolean>;
   }
 >()("api/carts/CartRepository") {
   static readonly layer = Layer.effect(
@@ -92,18 +99,32 @@ export class CartRepository extends Context.Service<
         productId: ProductId,
         quantity: number,
       ) {
-        yield* sql`
-            INSERT INTO cart_lines (cart_id, product_id, quantity)
-            VALUES (${id}, ${productId}, ${quantity})
-            ON CONFLICT (cart_id, product_id) DO UPDATE SET quantity = excluded.quantity
-          `;
+        // The guard is in the statement, so a checkout cannot land between
+        // checking the status and writing the line.
+        const written = yield* sql`
+          INSERT INTO cart_lines (cart_id, product_id, quantity)
+          SELECT id, ${productId}, ${quantity} FROM carts WHERE id = ${id} AND status = 'OPEN'
+          ON CONFLICT (cart_id, product_id) DO UPDATE SET quantity = excluded.quantity
+          RETURNING product_id
+        `;
+        return written.length === 1;
       }, Effect.orDie);
 
       const removeLine = Effect.fn("CartRepository.removeLine")(function* (
         id: CartId,
         productId: ProductId,
       ) {
-        yield* sql`DELETE FROM cart_lines WHERE cart_id = ${id} AND product_id = ${productId}`;
+        const removed = yield* sql`
+          DELETE FROM cart_lines
+          WHERE cart_id = ${id} AND product_id = ${productId}
+            AND EXISTS (SELECT 1 FROM carts WHERE id = ${id} AND status = 'OPEN')
+          RETURNING product_id
+        `;
+        if (removed.length === 1) return true;
+        // Nothing deleted: either the line was absent or the cart is not
+        // open. A cart never reopens, so reading its status now is safe.
+        const open = yield* sql`SELECT 1 FROM carts WHERE id = ${id} AND status = 'OPEN'`;
+        return open.length === 1;
       }, Effect.orDie);
 
       return CartRepository.of({

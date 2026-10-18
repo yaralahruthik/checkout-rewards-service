@@ -28,7 +28,21 @@ const cartWith = (...lines: ReadonlyArray<readonly [number, number]>) =>
     return cartId;
   });
 
-const checkout = (cartId: string) => HttpClient.post(`/api/carts/${cartId}/checkout`);
+const checkout = (
+  cartId: string,
+  request?: { readonly couponCode?: string; readonly expectedSubtotalCents?: number },
+) =>
+  HttpClient.post(
+    `/api/carts/${cartId}/checkout`,
+    request === undefined ? {} : { body: HttpBody.jsonUnsafe(request) },
+  );
+
+/** The cart view, typed for reading fields in assertions. */
+const cartOf = (cartId: string) =>
+  HttpClient.get(`/api/carts/${cartId}`).pipe(
+    Effect.flatMap((response) => response.json),
+    Effect.map((cart) => cart as { status: string; itemCount: number; orderId?: string }),
+  );
 
 const inventoryOf = (productId: number) =>
   HttpClient.get("/api/products").pipe(
@@ -89,7 +103,9 @@ it.effect(
     Effect.gen(function* () {
       const cartIds = yield* Effect.all(Array.from({ length: 10 }, () => cartWith([6, 1])));
 
-      const responses = yield* Effect.forEach(cartIds, checkout, { concurrency: "unbounded" });
+      const responses = yield* Effect.forEach(cartIds, (cartId) => checkout(cartId), {
+        concurrency: "unbounded",
+      });
 
       const placed = responses.filter((response) => response.status === 201);
       const refused = responses.filter((response) => response.status === 409);
@@ -140,9 +156,7 @@ it.effect(
           ],
         },
       });
-      const cart = (yield* HttpClient.get(`/api/carts/${cartId}`).pipe(
-        Effect.flatMap((r) => r.json),
-      )) as { status: string; itemCount: number };
+      const cart = yield* cartOf(cartId);
       assert.strictEqual(cart.status, "OPEN");
       assert.strictEqual(cart.itemCount, 6);
       assert.strictEqual(yield* inventoryOf(1), 25);
@@ -214,16 +228,14 @@ it.effect("a checked-out cart shows its status and the id of the order it produc
 
     const order = (yield* checkout(cartId).pipe(Effect.flatMap((r) => r.json))) as OrderBody;
 
-    const cart = (yield* HttpClient.get(`/api/carts/${cartId}`).pipe(
-      Effect.flatMap((r) => r.json),
-    )) as { status: string; orderId: string };
+    const cart = yield* cartOf(cartId);
     assert.strictEqual(cart.status, "CHECKED_OUT");
     assert.strictEqual(cart.orderId, order.id);
   }).pipe(Effect.provide(TestApi)),
 );
 
 it.effect(
-  "checking out a cart again returns CART_ALREADY_CHECKED_OUT with the original order and takes no more stock",
+  "checking out a cart again replays the original order with 200 and takes no more stock",
   () =>
     Effect.gen(function* () {
       const cartId = yield* cartWith([6, 2]);
@@ -231,12 +243,130 @@ it.effect(
 
       const response = yield* checkout(cartId);
 
+      assert.strictEqual(response.status, 200);
+      assert.deepStrictEqual<unknown>(yield* response.json, order);
+      assert.strictEqual(yield* inventoryOf(6), 1);
+    }).pipe(Effect.provide(TestApi)),
+);
+
+it.effect(
+  "checking out a checked-out cart with a different coupon code returns CART_ALREADY_CHECKED_OUT",
+  () =>
+    Effect.gen(function* () {
+      const cartId = yield* cartWith([3, 1]);
+      const order = (yield* checkout(cartId).pipe(Effect.flatMap((r) => r.json))) as OrderBody;
+
+      const response = yield* checkout(cartId, { couponCode: "SAVE10-ABCD" });
+
       assert.strictEqual(response.status, 409);
       assert.deepStrictEqual<unknown>(yield* response.json, {
         code: "CART_ALREADY_CHECKED_OUT",
         message: `Cart ${cartId} is already checked out`,
         details: { cartId, orderId: order.id },
       });
+    }).pipe(Effect.provide(TestApi)),
+);
+
+it.effect(
+  "checking out with an unknown coupon code returns COUPON_INVALID and leaves the cart open",
+  () =>
+    Effect.gen(function* () {
+      const cartId = yield* cartWith([6, 1]);
+
+      const response = yield* checkout(cartId, { couponCode: "NOPE" });
+
+      assert.strictEqual(response.status, 422);
+      assert.deepStrictEqual<unknown>(yield* response.json, {
+        code: "COUPON_INVALID",
+        message: "Coupon NOPE does not exist",
+        details: { couponCode: "NOPE" },
+      });
+      const cart = yield* cartOf(cartId);
+      assert.strictEqual(cart.status, "OPEN");
+      assert.strictEqual(yield* inventoryOf(6), 3);
+    }).pipe(Effect.provide(TestApi)),
+);
+
+it.effect(
+  "ten concurrent checkouts of one cart place one order: one 201, nine 200 replays, stock taken once",
+  () =>
+    Effect.gen(function* () {
+      const cartId = yield* cartWith([6, 2]);
+
+      const responses = yield* Effect.forEach(Array.from({ length: 10 }), () => checkout(cartId), {
+        concurrency: "unbounded",
+      });
+
+      assert.deepStrictEqual(
+        responses.map((response) => response.status).sort((a, b) => a - b),
+        [200, 200, 200, 200, 200, 200, 200, 200, 200, 201],
+      );
+      const orders = yield* Effect.forEach(responses, (response) =>
+        response.json.pipe(Effect.map((order) => order as unknown as OrderBody)),
+      );
+      const orderIds = new Set(orders.map((order) => order.id));
+      assert.strictEqual(orderIds.size, 1);
+      const [orderId] = orderIds;
+      const cart = yield* cartOf(cartId);
+      assert.strictEqual(cart.orderId, orderId);
       assert.strictEqual(yield* inventoryOf(6), 1);
+
+      const conflict = yield* checkout(cartId, { couponCode: "SAVE10-ABCD" });
+      assert.strictEqual(conflict.status, 409);
+      const error = (yield* conflict.json) as { code: string; details: { orderId: string } };
+      assert.strictEqual(error.code, "CART_ALREADY_CHECKED_OUT");
+      assert.strictEqual(error.details.orderId, orderId);
+    }).pipe(Effect.provide(TestApi)),
+);
+
+it.effect(
+  "a price rise after add-to-cart refuses a stale expected subtotal with PRICE_CHANGED, and the placed order keeps its snapshot",
+  () =>
+    Effect.gen(function* () {
+      const cartId = yield* cartWith([4, 2]);
+      const setPrice = (unitPriceCents: number) =>
+        HttpClient.patch("/api/admin/products/4", {
+          body: HttpBody.jsonUnsafe({ unitPriceCents }),
+        });
+      yield* setPrice(2499);
+
+      const stale = yield* checkout(cartId, { expectedSubtotalCents: 3998 });
+
+      assert.strictEqual(stale.status, 409);
+      assert.deepStrictEqual<unknown>(yield* stale.json, {
+        code: "PRICE_CHANGED",
+        message: "The subtotal is now 4998 cents, not 3998",
+        details: {
+          expectedSubtotalCents: 3998,
+          subtotalCents: 4998,
+          lines: [
+            {
+              productId: 4,
+              productName: "Laptop Stand",
+              unitPriceCents: 2499,
+              quantity: 2,
+              lineTotalCents: 4998,
+            },
+          ],
+        },
+      });
+      const cart = yield* cartOf(cartId);
+      assert.strictEqual(cart.status, "OPEN");
+      assert.strictEqual(yield* inventoryOf(4), 20);
+
+      const placed = yield* checkout(cartId, { expectedSubtotalCents: 4998 });
+      assert.strictEqual(placed.status, 201);
+      const order = (yield* placed.json) as OrderBody;
+      assert.strictEqual(order.subtotalCents, 4998);
+
+      yield* setPrice(999);
+      const fetched = yield* HttpClient.get(`/api/orders/${order.id}`).pipe(
+        Effect.flatMap((r) => r.json),
+      );
+      assert.deepStrictEqual<unknown>(fetched, order);
+
+      const replay = yield* checkout(cartId, { expectedSubtotalCents: 1 });
+      assert.strictEqual(replay.status, 200);
+      assert.deepStrictEqual<unknown>(yield* replay.json, order);
     }).pipe(Effect.provide(TestApi)),
 );

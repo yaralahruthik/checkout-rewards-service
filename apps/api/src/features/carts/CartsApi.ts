@@ -69,6 +69,14 @@ export class CartNotFound extends Schema.Error<CartNotFound>("CartNotFound")(
 export const cartNotFound = (cartId: CartId) =>
   new CartNotFound({ message: `Cart ${cartId} does not exist`, details: { cartId } });
 
+export class CartNotOpen extends Schema.Error<CartNotOpen>("CartNotOpen")(
+  errorFields("CART_NOT_OPEN", Schema.Struct({ cartId: Schema.String })),
+  { httpApiStatus: 409, description: "The cart is checked out, so its lines cannot change." },
+) {}
+
+export const cartNotOpen = (cartId: CartId) =>
+  new CartNotOpen({ message: `Cart ${cartId} is not open`, details: { cartId } });
+
 export class CartsApi extends HttpApiGroup.make("carts")
   .add(
     HttpApiEndpoint.post("createCart", "/carts", {
@@ -99,7 +107,7 @@ export class CartsApi extends HttpApiGroup.make("carts")
       params: { id: CartId, productId: ProductId },
       payload: SetQuantity,
       success: Cart,
-      error: [CartNotFound, ProductNotFound, InsufficientInventory],
+      error: [CartNotFound, CartNotOpen, ProductNotFound, InsufficientInventory],
     }).annotateMerge(
       OpenApi.annotations({
         summary: "Set an item's quantity",
@@ -112,7 +120,7 @@ export class CartsApi extends HttpApiGroup.make("carts")
     HttpApiEndpoint.delete("removeItem", "/carts/:id/items/:productId", {
       params: { id: CartId, productId: ProductId },
       success: Cart,
-      error: CartNotFound,
+      error: [CartNotFound, CartNotOpen],
     }).annotateMerge(
       OpenApi.annotations({
         summary: "Remove an item",
