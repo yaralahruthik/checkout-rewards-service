@@ -77,7 +77,9 @@ export class ProductRepository extends Context.Service<
       }, Effect.orDie);
 
       // The guard is in the statement itself, so no read-then-write gap exists
-      // for a concurrent checkout to slip into. Product-id order means two
+      // for a concurrent checkout to slip into. SQLite's `BEGIN IMMEDIATE`
+      // already serializes checkouts, so no test can show the gap; the guard is
+      // what keeps this correct on Postgres. Product-id order means two
       // checkouts sharing products lock their rows in the same order.
       const decrementInventory = Effect.fn("ProductRepository.decrementInventory")(function* (
         lines: ReadonlyArray<{ readonly productId: ProductId; readonly quantity: number }>,

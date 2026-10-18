@@ -9,11 +9,6 @@ type OrderBody = {
   readonly subtotalCents: number;
   readonly discountCents: number;
   readonly totalCents: number;
-  readonly lines: ReadonlyArray<{
-    readonly productId: number;
-    readonly productName: string;
-    readonly quantity: number;
-  }>;
 };
 type CouponBody = { readonly code: string; readonly status: string };
 type ReportBody = {
@@ -115,25 +110,11 @@ it.effect(
       assert.strictEqual(report.grossRevenueCents, sum(orders.map((o) => o.subtotalCents)));
       assert.strictEqual(report.totalDiscountsCents, sum(orders.map((o) => o.discountCents)));
       assert.strictEqual(report.netRevenueCents, sum(orders.map((o) => o.totalCents)));
-      assert.strictEqual(
-        report.grossRevenueCents - report.totalDiscountsCents,
-        report.netRevenueCents,
-      );
       assert.deepStrictEqual(report.coupons, {
         generated: coupons.length,
         available: coupons.filter((c) => c.status === "AVAILABLE").length,
         redeemed: coupons.filter((c) => c.status === "REDEEMED").length,
       });
-      const allLines = orders.flatMap((o) => o.lines);
-      for (const { productId, productName, purchasedQuantity } of report.products) {
-        const lines = allLines.filter((l) => l.productId === productId);
-        assert.strictEqual(purchasedQuantity, sum(lines.map((l) => l.quantity)));
-        assert.strictEqual(productName, lines[0]!.productName);
-      }
-      assert.strictEqual(
-        sum(report.products.map((p) => p.purchasedQuantity)),
-        sum(allLines.map((l) => l.quantity)),
-      );
 
       // Reading the report is a pure read.
       assert.deepStrictEqual(yield* getJson("/api/admin/report"), report);

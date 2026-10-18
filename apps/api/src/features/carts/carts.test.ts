@@ -178,6 +178,7 @@ it.effect("every cart endpoint returns CART_NOT_FOUND for a cart that does not e
       yield* HttpClient.get(`/api/carts/${missing}`),
       yield* setQuantity(missing, 1, 1),
       yield* HttpClient.del(`/api/carts/${missing}/items/1`),
+      yield* HttpClient.post(`/api/carts/${missing}/checkout`),
     ];
 
     for (const response of responses) {
