@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: voidzero-dev/setup-vp@v1.21.2
+        with:
+          node-version: "24"
+          cache: true
+
+      # Generates the orval client (git-ignored) so the web app type-checks.
+      - name: Format, lint and type check
+        run: vp run check
+
+      # Includes the OpenAPI drift test (apps/api/src/openapi.test.ts).
+      - name: Test
+        run: vp test
+
+      - name: Build
+        run: vp run build

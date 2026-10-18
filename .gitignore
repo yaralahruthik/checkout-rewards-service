@@ -1,0 +1,15 @@
+node_modules
+dist
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Local SQLite database
+apps/api/data/
+
+# Generated from apps/api/openapi.json by orval
+apps/web/src/api/generated/
+
+.claude/worktrees/

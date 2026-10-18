@@ -1,0 +1,19 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Make every package resolve the Vite and Vitest that Vite+ bundles, so
+# @effect/vitest shares one Vitest instance with `vp test`.
+overrides:
+  vite@*: npm:@voidzero-dev/vite-plus-core@1.3.0
+  vitest@*: 5.0.5
+
+# `vite` is the Vite+ core (versioned 1.x), which plugins built for Vite 8
+# accept at runtime but not by semver.
+peerDependencyRules:
+  allowedVersions:
+    vite: "*"
+
+# orval depends on esbuild, whose postinstall only verifies its binary.
+allowBuilds:
+  esbuild: true

@@ -1,0 +1,7 @@
+{
+  "extends": "@uniblox/tsconfig/react.json",
+  "compilerOptions": {
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src"]
+}
