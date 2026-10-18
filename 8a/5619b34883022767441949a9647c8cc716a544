@@ -1,0 +1,67 @@
+apps/api/src/features/coupons/CouponsApi.ts
+  s_b6029daf7b8a3d::t_33a47e75f29079 5,26
+apps/api/openapi.json
+  s_b6029daf7b8a3d::t_64da5c56e73bfd 356,369-371,396,995-1018,1035-1036,1138-1169,1355-1378,1395-1396
+apps/api/src/features/checkout/CheckoutService.ts
+  s_b6029daf7b8a3d::t_d7e43bb0706f83 4,7,19,24,47,58,75-81,128-143,145,149,151-155,172-175
+  s_b6029daf7b8a3d::t_454e6970f79a72 170-171,176-177
+apps/api/src/features/checkout/checkout.test.ts
+  s_b6029daf7b8a3d::t_d9f3ab58ea1a74 77-78
+  s_b6029daf7b8a3d::t_d5b2ef731802be 377-390,400-442
+  s_b6029daf7b8a3d::t_454e6970f79a72 391-399,513-519,521-523,525-532
+  s_b6029daf7b8a3d::t_33a47e75f29079 12-13,470
+  s_b6029daf7b8a3d::t_861c88562babdc 443-448,454-455,458-469,471,474-475,479-480
+  s_b6029daf7b8a3d::t_50505886e6a75f 449-453,456-457,472-473,476-478
+  s_b6029daf7b8a3d::t_3f139ca60b870c 481-512,520,524,533
+apps/api/src/shared/db/migrations/0005_add_coupon_redemption.ts
+  s_b6029daf7b8a3d::t_b7d6c4c348bacd 1-22,25-27,29,33
+  s_b6029daf7b8a3d::t_726de8409048ce 23-24,28,30-32
+apps/api/src/features/orders/OrdersApi.ts
+  s_b6029daf7b8a3d::t_a76be453e5e363 33-35,38
+  s_b6029daf7b8a3d::t_33a47e75f29079 4,36
+  s_b6029daf7b8a3d::t_454e6970f79a72 37
+apps/web/src/features/orders/OrderPage.tsx
+  s_b6029daf7b8a3d::t_1af05f16c5f89e 50-57,109-116
+apps/api/src/features/coupons/CouponRepository.ts
+  s_b6029daf7b8a3d::t_33a47e75f29079 3-4,34,107,117-118
+  s_b6029daf7b8a3d::t_a56f375ea3afde 35-46,106,108-116,119-128,137-143
+apps/web/src/features/cart/CartPage.tsx
+  s_b6029daf7b8a3d::t_1af05f16c5f89e 16,156-157,159-169
+apps/web/src/api/toastApiError.ts
+  s_b6029daf7b8a3d::t_1af05f16c5f89e 14
+apps/web/src/features/admin/CouponsPanel.tsx
+  s_b6029daf7b8a3d::t_da1837e4b46f98 41-45
+DECISIONS.md
+  s_b6029daf7b8a3d::t_78654d688392ee 149-151,186,222,235,244-272,275-290
+  s_b6029daf7b8a3d::t_61d545cb727679 273-274
+  s_b6029daf7b8a3d::t_096c2ef149fb8a 291
+apps/api/src/shared/money.ts
+  s_b6029daf7b8a3d::t_a76be453e5e363 20-25,29
+  s_b6029daf7b8a3d::t_33a47e75f29079 26-28,30-32
+apps/api/src/shared/db/Database.ts
+  s_b6029daf7b8a3d::t_3144a62a1659c1 11,19
+apps/api/src/features/checkout/CheckoutApi.ts
+  s_b6029daf7b8a3d::t_d7e43bb0706f83 67-80,105,111
+apps/api/src/features/orders/OrderRepository.ts
+  s_b6029daf7b8a3d::t_a76be453e5e363 35-36
+apps/web/src/features/cart/useCart.ts
+  s_b6029daf7b8a3d::t_1af05f16c5f89e 70-72,108-114,163-164
+.scratch/checkout-rewards/issues/07-coupon-redemption-at-checkout.md
+  s_b6029daf7b8a3d::t_95e92392878304 7,9-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8a5619b34883022767441949a9647c8cc716a544",
+  "prompts": {},
+  "sessions": {
+    "s_b6029daf7b8a3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "878e2808-3dd2-4744-9b5d-a62cdad7ee3d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "yaralahruthik <yaralahruthikreddy@gmail.com>"
+    }
+  }
+}
