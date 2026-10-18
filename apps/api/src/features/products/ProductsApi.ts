@@ -7,6 +7,7 @@ import { Cents } from "../../shared/money.ts";
 export const ProductId = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).annotate({
   identifier: "ProductId",
 });
+export type ProductId = typeof ProductId.Type;
 
 const Inventory = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 

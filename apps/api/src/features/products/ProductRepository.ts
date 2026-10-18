@@ -8,7 +8,7 @@ export class ProductRepository extends Context.Service<
     readonly list: Effect.Effect<ReadonlyArray<Product>>;
     /** Applies the update and returns the product, or `None` if it does not exist. */
     readonly update: (
-      id: typeof ProductId.Type,
+      id: ProductId,
       update: ProductUpdate,
     ) => Effect.Effect<Option.Option<Product>>;
   }
@@ -42,7 +42,7 @@ export class ProductRepository extends Context.Service<
       });
 
       const update = Effect.fn("ProductRepository.update")(function* (
-        id: typeof ProductId.Type,
+        id: ProductId,
         update: ProductUpdate,
       ) {
         return yield* updateQuery({

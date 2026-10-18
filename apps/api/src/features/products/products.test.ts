@@ -3,6 +3,15 @@ import { Effect } from "effect";
 import { HttpBody, HttpClient } from "effect/http";
 import { TestApi } from "../../testing/TestApi.ts";
 
+/** The product with the given id, as `GET /api/products` returns it. */
+const catalogProduct = (id: number) =>
+  HttpClient.get("/api/products").pipe(
+    Effect.flatMap((response) => response.json),
+    Effect.map((products): unknown =>
+      (products as ReadonlyArray<{ id: number }>).find((p) => p.id === id),
+    ),
+  );
+
 it.effect("lists every seeded product with its price in integer cents and available stock", () =>
   Effect.gen(function* () {
     const response = yield* HttpClient.get("/api/products");
@@ -35,10 +44,7 @@ it.effect(
         availableInventory: 0,
       };
       assert.deepStrictEqual(yield* response.json, updated);
-
-      const catalog = (yield* (yield* HttpClient.get("/api/products"))
-        .json) as ReadonlyArray<unknown>;
-      assert.deepStrictEqual(catalog[5], updated);
+      assert.deepStrictEqual(yield* catalogProduct(6), updated);
     }).pipe(Effect.provide(TestApi)),
 );
 
@@ -63,10 +69,7 @@ it.effect(
         assert.strictEqual(error.code, "VALIDATION_ERROR");
         assert.strictEqual(error.details.location, "body");
       }
-
-      const catalog = (yield* (yield* HttpClient.get("/api/products"))
-        .json) as ReadonlyArray<unknown>;
-      assert.deepStrictEqual(catalog[0], {
+      assert.deepStrictEqual(yield* catalogProduct(1), {
         id: 1,
         name: "Mechanical Keyboard",
         unitPriceCents: 8999,
