@@ -3,6 +3,7 @@ import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/ht
 import { errorFields } from "../../shared/errors.ts";
 import { Cents } from "../../shared/money.ts";
 import { CartId, CartNotFound } from "../carts/CartsApi.ts";
+import { CouponAlreadyRedeemed, CouponInvalid } from "../coupons/CouponsApi.ts";
 import { Order, type OrderId, OrderLine } from "../orders/OrdersApi.ts";
 import { InsufficientInventory } from "../products/ProductsApi.ts";
 
@@ -54,28 +55,6 @@ export const priceChanged = (details: PriceChanged["details"]) =>
   new PriceChanged({
     message: `The subtotal is now ${details.subtotalCents} cents, not ${details.expectedSubtotalCents}`,
     details,
-  });
-
-export class CouponInvalid extends Schema.Error<CouponInvalid>("CouponInvalid")(
-  errorFields("COUPON_INVALID", Schema.Struct({ couponCode: Schema.String })),
-  { httpApiStatus: 422, description: "No coupon has the given code." },
-) {}
-
-export const couponInvalid = (couponCode: string) =>
-  new CouponInvalid({ message: `Coupon ${couponCode} does not exist`, details: { couponCode } });
-
-export class CouponAlreadyRedeemed extends Schema.Error<CouponAlreadyRedeemed>(
-  "CouponAlreadyRedeemed",
-)(errorFields("COUPON_ALREADY_REDEEMED", Schema.Struct({ couponCode: Schema.String })), {
-  httpApiStatus: 409,
-  description:
-    "Another order already redeemed the coupon. Nothing changed: the cart is still open. Check out without it, or with another coupon.",
-}) {}
-
-export const couponAlreadyRedeemed = (couponCode: string) =>
-  new CouponAlreadyRedeemed({
-    message: `Coupon ${couponCode} has already been redeemed`,
-    details: { couponCode },
   });
 
 export const CheckoutRequest = Schema.Struct({

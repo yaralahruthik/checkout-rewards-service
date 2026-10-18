@@ -1,6 +1,13 @@
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { SqlClient, SqlSchema } from "effect/sql";
-import { Product, ProductId, ProductUpdate } from "./ProductsApi.ts";
+import {
+  InsufficientInventory,
+  Product,
+  ProductId,
+  ProductUpdate,
+  type ShortLine,
+  insufficientInventory,
+} from "./ProductsApi.ts";
 
 export class ProductRepository extends Context.Service<
   ProductRepository,
@@ -13,10 +20,15 @@ export class ProductRepository extends Context.Service<
       update: ProductUpdate,
     ) => Effect.Effect<Option.Option<Product>>;
     /**
-     * Takes `quantity` units in one conditional update that only succeeds
-     * while at least that many are available. `false` when there are not.
+     * Takes each line's quantity, in product-id order, each in one conditional
+     * update that only succeeds while at least that many are available. Every
+     * line is attempted, so `InsufficientInventory` lists every short one. Run
+     * it inside a transaction: lines taken before a short one are only undone
+     * by the rollback.
      */
-    readonly decrementInventory: (id: ProductId, quantity: number) => Effect.Effect<boolean>;
+    readonly decrementInventory: (
+      lines: ReadonlyArray<{ readonly productId: ProductId; readonly quantity: number }>,
+    ) => Effect.Effect<void, InsufficientInventory>;
   }
 >()("api/products/ProductRepository") {
   static readonly layer = Layer.effect(
@@ -65,18 +77,35 @@ export class ProductRepository extends Context.Service<
       }, Effect.orDie);
 
       // The guard is in the statement itself, so no read-then-write gap exists
-      // for a concurrent checkout to slip into.
+      // for a concurrent checkout to slip into. Product-id order means two
+      // checkouts sharing products lock their rows in the same order.
       const decrementInventory = Effect.fn("ProductRepository.decrementInventory")(function* (
-        id: ProductId,
-        quantity: number,
+        lines: ReadonlyArray<{ readonly productId: ProductId; readonly quantity: number }>,
       ) {
-        const updated = yield* sql`
-          UPDATE products SET available_inventory = available_inventory - ${quantity}
-          WHERE id = ${id} AND available_inventory >= ${quantity}
-          RETURNING id
-        `;
-        return updated.length === 1;
-      }, Effect.orDie);
+        const short: Array<ShortLine> = [];
+        for (const { productId, quantity } of [...lines].sort(
+          (a, b) => a.productId - b.productId,
+        )) {
+          const updated = yield* sql`
+            UPDATE products SET available_inventory = available_inventory - ${quantity}
+            WHERE id = ${productId} AND available_inventory >= ${quantity}
+            RETURNING id
+          `.pipe(Effect.orDie);
+          if (updated.length === 1) continue;
+          const product = yield* findById(productId).pipe(Effect.orDie);
+          short.push({
+            productId,
+            requestedQuantity: quantity,
+            availableInventory: Option.match(product, {
+              onNone: () => 0,
+              onSome: (product) => product.availableInventory,
+            }),
+          });
+        }
+        if (short.length > 0) {
+          return yield* insufficientInventory(short);
+        }
+      });
 
       return ProductRepository.of({
         list,

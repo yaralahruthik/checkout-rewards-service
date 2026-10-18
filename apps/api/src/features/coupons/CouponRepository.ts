@@ -1,7 +1,14 @@
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { SqlClient, SqlSchema } from "effect/sql";
 import { OrderId } from "../orders/OrdersApi.ts";
-import { Coupon, CouponCode } from "./CouponsApi.ts";
+import {
+  Coupon,
+  CouponAlreadyRedeemed,
+  CouponCode,
+  CouponInvalid,
+  couponAlreadyRedeemed,
+  couponInvalid,
+} from "./CouponsApi.ts";
 
 /** A coupon to issue; the repository decides which milestone it rewards. */
 export type NewCoupon = {
@@ -31,19 +38,18 @@ export class CouponRepository extends Context.Service<
     readonly progress: (milestoneInterval: number) => Effect.Effect<typeof MilestoneProgress.Type>;
     /** Every coupon, newest milestone first. */
     readonly list: Effect.Effect<ReadonlyArray<Coupon>>;
-    /** The coupon with this code, redeemed or not. */
-    readonly findByCode: (code: string) => Effect.Effect<Option.Option<Coupon>>;
     /**
      * Marks the coupon redeemed by `orderId`, only while it is unredeemed, and
-     * returns it. `None` when no row changed: the code is unknown or already
-     * redeemed. Run it inside the checkout transaction, before the order is
-     * inserted: the reference to the order is checked at commit.
+     * returns it. Fails with `CouponInvalid` when no coupon has the code, and
+     * `CouponAlreadyRedeemed` when another order has it. Run it inside the
+     * checkout transaction, before the order is inserted: the reference to
+     * the order is checked at commit.
      */
     readonly redeem: (
       code: string,
       orderId: OrderId,
       redeemedAt: string,
-    ) => Effect.Effect<Option.Option<Coupon>>;
+    ) => Effect.Effect<Coupon, CouponInvalid | CouponAlreadyRedeemed>;
   }
 >()("api/coupons/CouponRepository") {
   static readonly layer = Layer.effect(
@@ -103,7 +109,7 @@ export class CouponRepository extends Context.Service<
         execute: () => sql`SELECT ${columns} FROM coupons ORDER BY milestone_order_count DESC`,
       })().pipe(Effect.orDie, Effect.withSpan("CouponRepository.list"));
 
-      const findByCodeQuery = SqlSchema.findOneOption({
+      const findByCode = SqlSchema.findOneOption({
         Request: CouponCode,
         Result: Coupon,
         execute: (code) => sql`SELECT ${columns} FROM coupons WHERE code = ${code}`,
@@ -126,6 +132,20 @@ export class CouponRepository extends Context.Service<
         `,
       });
 
+      const redeem = Effect.fn("CouponRepository.redeem")(function* (
+        code: string,
+        orderId: OrderId,
+        redeemedAt: string,
+      ) {
+        const redeemed = yield* redeemQuery({ code, orderId, redeemedAt }).pipe(Effect.orDie);
+        if (Option.isSome(redeemed)) return redeemed.value;
+        // No row changed: the code is unknown or another order has it. The
+        // guard above decided; this read only chooses the error.
+        return Option.isNone(yield* findByCode(code).pipe(Effect.orDie))
+          ? yield* couponInvalid(code)
+          : yield* couponAlreadyRedeemed(code);
+      });
+
       return CouponRepository.of({
         issueNext,
         progress: (milestoneInterval) =>
@@ -134,13 +154,7 @@ export class CouponRepository extends Context.Service<
             Effect.withSpan("CouponRepository.progress"),
           ),
         list,
-        findByCode: (code) =>
-          findByCodeQuery(code).pipe(Effect.orDie, Effect.withSpan("CouponRepository.findByCode")),
-        redeem: (code, orderId, redeemedAt) =>
-          redeemQuery({ code, orderId, redeemedAt }).pipe(
-            Effect.orDie,
-            Effect.withSpan("CouponRepository.redeem"),
-          ),
+        redeem,
       });
     }),
   );

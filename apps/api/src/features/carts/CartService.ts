@@ -100,9 +100,7 @@ export class CartService extends Context.Service<
             { productId, requestedQuantity: quantity, availableInventory },
           ]);
         }
-        if (!(yield* repository.setQuantity(id, productId, quantity))) {
-          return yield* cartNotOpen(id);
-        }
+        yield* repository.setQuantity(id, productId, quantity);
         return toCart(cart, yield* repository.lines(id));
       });
 
@@ -111,9 +109,7 @@ export class CartService extends Context.Service<
         productId: ProductId,
       ) {
         const cart = yield* find(id);
-        if (!(yield* repository.removeLine(id, productId))) {
-          return yield* cartNotOpen(id);
-        }
+        yield* repository.removeLine(id, productId);
         return toCart(cart, yield* repository.lines(id));
       });
 

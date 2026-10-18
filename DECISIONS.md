@@ -195,12 +195,12 @@ Two things are deliberately **not** invariants: a cart holding stock (carts rese
 
 **Choice:** The last. `POST /api/carts/{id}/checkout` (`apps/api/src/features/checkout/CheckoutService.ts`) runs inside `sql.withTransaction`, in this order. The step numbers follow SPEC.md and the comments in the code.
 
-1. **Claim the cart:** `UPDATE carts SET status = 'CHECKED_OUT' WHERE id = ? AND status = 'OPEN'`. No row changed means the cart is missing (`404 CART_NOT_FOUND`) or already checked out, which is a replay (`200` with the existing order) or a conflict (`409 CART_ALREADY_CHECKED_OUT` with the existing `orderId`); see the next decision.
+1. **Claim the cart:** `UPDATE carts SET status = 'CHECKED_OUT' WHERE id = ? AND status = 'OPEN'`. No row changed means the cart is missing (`404 CART_NOT_FOUND`, raised by `CartRepository.claim`) or already checked out (`claim` returns the order it produced), which is a replay (`200` with the existing order) or a conflict (`409 CART_ALREADY_CHECKED_OUT` with the existing `orderId`); see the next decision.
 2. **Load the lines** in product-id order. None → `422 EMPTY_CART`.
 3. **Price them** at current prices: line total = unit price × quantity, subtotal = sum of line totals, all integer cents.
 4. **Price guard:** an `expectedSubtotalCents` that differs from the subtotal → `409 PRICE_CHANGED`; see the next decision.
-5. **Take the stock**, line by line in product-id order: `UPDATE products SET available_inventory = available_inventory - q WHERE id = ? AND available_inventory >= q`. A line that changes no row is short; its current inventory is re-read for the error. Every line is attempted, so `409 INSUFFICIENT_INVENTORY` lists every short line with requested and available quantities.
-6. **Redeem the coupon**, if a `couponCode` was given: `UPDATE coupons SET redeemed_order_id = ?, redeemed_at = ? WHERE code = ? AND redeemed_order_id IS NULL RETURNING ...`. No row changed means the code is unknown (`422 COUPON_INVALID`) or already redeemed (`409 COUPON_ALREADY_REDEEMED`); see the coupon redemption decision.
+5. **Take the stock**, line by line in product-id order (`ProductRepository.decrementInventory` sorts the lines itself): `UPDATE products SET available_inventory = available_inventory - q WHERE id = ? AND available_inventory >= q`. A line that changes no row is short; its current inventory is re-read for the error. Every line is attempted, so `409 INSUFFICIENT_INVENTORY`, raised by the repository, lists every short line with requested and available quantities.
+6. **Redeem the coupon**, if a `couponCode` was given: `UPDATE coupons SET redeemed_order_id = ?, redeemed_at = ? WHERE code = ? AND redeemed_order_id IS NULL RETURNING ...`. No row changed means the code is unknown (`422 COUPON_INVALID`) or already redeemed (`409 COUPON_ALREADY_REDEEMED`); `CouponRepository.redeem` raises both. See the coupon redemption decision.
 7. **Insert the order and its line snapshots** (product name, unit price, quantity, line total copied from step 3; the coupon code, its percent and the discount from step 6). Orders are read back from the snapshots only, never joined to products, so later catalog changes do not alter them.
 8. **Commit.** Any failure in an earlier step (a typed error or a defect) rolls the whole transaction back: the cart is `OPEN` again, no inventory moved and the coupon is still available.
 
@@ -313,7 +313,7 @@ WHERE code = ? AND redeemed_order_id IS NULL
 RETURNING ...
 ```
 
-- **No row back** means the code is unknown or already taken. A follow-up read by code tells them apart: no coupon → `422 COUPON_INVALID`, a redeemed coupon → `409 COUPON_ALREADY_REDEEMED`. That read happens after the guarded write has already failed, so it only chooses the error message; it never decides whether the coupon is taken.
+- **No row back** means the code is unknown or already taken. A follow-up read by code inside `CouponRepository.redeem` tells them apart: no coupon → `422 COUPON_INVALID`, a redeemed coupon → `409 COUPON_ALREADY_REDEEMED`. That read happens after the guarded write has already failed, so it only chooses the error message; it never decides whether the coupon is taken.
 - **Rollback, not compensation.** Every later failure, and every typed error in the transaction, rolls the redemption back with the claim and the stock, so a coupon cannot be lost to a checkout that fails (test 4). The losing side of a race gets its whole transaction rolled back: its cart stays `OPEN` and its stock is untouched (test 3).
 - **The order records** `couponCode`, `discountPercent` (copied from the coupon's snapshot, returned by the update) and `discountCents`. The coupon records `redeemedOrderId` and `redeemedAt`, which `GET /api/admin/coupons` shows. Replay compares the request's code with the order's `couponCode` (see the replay decision).
 
