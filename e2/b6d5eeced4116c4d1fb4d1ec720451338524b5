@@ -1,0 +1,95 @@
+apps/api/src/features/orders/OrderService.ts
+  s_04ccd2d32d75f0::t_0cd06b7d7e904f 1,3-18,20-27
+  s_04ccd2d32d75f0::t_9684d546fa0ba9 2,19
+apps/api/src/shared/db/migrations/0003_create_orders.ts
+  s_04ccd2d32d75f0::t_365c7ff2e5487f 1-30
+apps/api/src/features/orders/OrdersApi.ts
+  s_04ccd2d32d75f0::t_fe5f1f5282dd32 1-45,49-62
+  s_04ccd2d32d75f0::t_9684d546fa0ba9 46-48
+apps/api/src/features/orders/orders.http.ts
+  s_04ccd2d32d75f0::t_8284ecd6bdead3 1-15
+apps/api/src/shared/db/Database.ts
+  s_04ccd2d32d75f0::t_b1332edfe86b2c 9,15
+apps/api/src/features/checkout/CheckoutService.ts
+  s_04ccd2d32d75f0::t_e4c530b90a6ec3 111
+  s_04ccd2d32d75f0::t_9766ee503e614f 5,27-30,42,44-52
+  s_04ccd2d32d75f0::t_529bcba81f4072 2-3,6-8,14,21-24,31-41,43,54-55,64-69,71,75,89-94,96,98-110,112
+  s_04ccd2d32d75f0::t_b528f6e57f5426 1,9-13,25-26,72-74,76-88
+  s_04ccd2d32d75f0::t_9684d546fa0ba9 4,15-20,53,59,70,95,97
+  s_04ccd2d32d75f0::t_37ee092ce726b4 56-58,60-63
+apps/api/src/features/carts/CartService.ts
+  s_04ccd2d32d75f0::t_9684d546fa0ba9 2,26
+  s_04ccd2d32d75f0::t_e035b7c7209017 28
+  s_04ccd2d32d75f0::t_9766ee503e614f 12,61
+apps/web/src/features/orders/OrderPage.tsx
+  s_04ccd2d32d75f0::t_e9f905c355506c 1-72
+DECISIONS.md
+  s_04ccd2d32d75f0::t_a16271385938de 131-141,143-146,152,158-166,168-172
+  s_04ccd2d32d75f0::t_9684d546fa0ba9 147-149,153-157,167
+  s_04ccd2d32d75f0::t_cabff39c1687ad 142
+  s_04ccd2d32d75f0::t_be43feccd3b915 150-151
+apps/api/src/features/orders/OrderRepository.ts
+  s_04ccd2d32d75f0::t_04b84e8151dcd9 1,6
+  s_04ccd2d32d75f0::t_9684d546fa0ba9 8-10,15,24
+  s_04ccd2d32d75f0::t_42233f4d74adfe 2-5,7,11-14,16-23,25-59
+apps/api/src/features/products/ProductRepository.ts
+  s_04ccd2d32d75f0::t_129dcd485e023d 67-80,86
+  s_04ccd2d32d75f0::t_0c0a25538e723c 15-19
+apps/api/src/features/checkout/checkout.http.ts
+  s_04ccd2d32d75f0::t_c74c6a79c323d1 1-15
+apps/web/src/api/toastApiError.ts
+  s_04ccd2d32d75f0::t_02bb67a8af4d4f 9-11
+apps/api/src/features/checkout/CheckoutApi.ts
+  s_04ccd2d32d75f0::t_b528f6e57f5426 6
+  s_04ccd2d32d75f0::t_9766ee503e614f 3,11-12,16-26,40
+  s_04ccd2d32d75f0::t_6d857f1195f193 2,4,7,35-39,41-49
+  s_04ccd2d32d75f0::t_37ee092ce726b4 1,8-10,27,34
+  s_04ccd2d32d75f0::t_9684d546fa0ba9 5,13-15,28-33
+apps/web/src/router.tsx
+  s_04ccd2d32d75f0::t_02bb67a8af4d4f 1-8,12,47-51,54
+apps/api/src/features/carts/CartsApi.ts
+  s_04ccd2d32d75f0::t_e035b7c7209017 5,50-51
+  s_04ccd2d32d75f0::t_9766ee503e614f 69-71
+apps/api/openapi.json
+  s_04ccd2d32d75f0::t_4f54f95cdae779 280-412,639,645,654,659,671,675,677-678,680-681,683,686-689,693,700-702,706,708,720,722,725-726,733-734,736-737,739,743-775,836-1034,1069-1071,1095-1100
+apps/web/src/features/cart/useCart.ts
+  s_04ccd2d32d75f0::t_02bb67a8af4d4f 2,12-15,48,70-93,128-133,136
+apps/api/src/shared/money.ts
+  s_04ccd2d32d75f0::t_9684d546fa0ba9 16-19
+apps/api/src/features/carts/CartRepository.ts
+  s_04ccd2d32d75f0::t_e035b7c7209017 3,8-9,56,63-67
+  s_04ccd2d32d75f0::t_c0e7c3de1b57f2 30-34
+  s_04ccd2d32d75f0::t_454bb028452339 82-89
+  s_04ccd2d32d75f0::t_7b5b6bf285f549 114
+.scratch/checkout-rewards/issues/04-checkout-and-order-snapshots.md
+  s_04ccd2d32d75f0::t_e4261844f68734 7,9-23
+apps/web/src/features/cart/CartPage.tsx
+  s_04ccd2d32d75f0::t_02bb67a8af4d4f 72-79,107-111
+apps/api/src/http.ts
+  s_04ccd2d32d75f0::t_e4c530b90a6ec3 5-6,18-23
+apps/api/src/features/checkout/checkout.test.ts
+  s_04ccd2d32d75f0::t_6d8e98eddb0e53 210-223
+  s_04ccd2d32d75f0::t_828c0b3a9d6525 33-43,83-114
+  s_04ccd2d32d75f0::t_ce3fab2c70b7a5 117-160
+  s_04ccd2d32d75f0::t_320a2b8983c4f3 1-32,44-82,115-116
+  s_04ccd2d32d75f0::t_bea1d8b332d6b1 161-209
+  s_04ccd2d32d75f0::t_630129279ca1c0 224-242
+apps/api/src/Api.ts
+  s_04ccd2d32d75f0::t_4702ec0bf7bb1e 3-4,15-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e2b6d5eeced4116c4d1fb4d1ec720451338524b5",
+  "prompts": {},
+  "sessions": {
+    "s_04ccd2d32d75f0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "512e927b-79fd-4444-bd5f-9e77cb047e06",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "yaralahruthik <yaralahruthikreddy@gmail.com>"
+    }
+  }
+}
