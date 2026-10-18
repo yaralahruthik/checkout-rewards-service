@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import type { CartLine } from "@/api/generated/model";
 import { Badge } from "@/components/ui/badge";
@@ -71,9 +72,9 @@ export const CartPage = () => {
       ) : cart.data === undefined || cart.data.lines.length === 0 ? (
         <p className="text-muted-foreground">
           Your cart is empty.{" "}
-          <a href="#/" className="underline">
+          <Link to="/" className="underline">
             Browse products
-          </a>
+          </Link>
           .
         </p>
       ) : (
