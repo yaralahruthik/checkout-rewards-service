@@ -9,3 +9,7 @@ export const Cents = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).annotate
   identifier: "Cents",
   description: "An amount of money in integer cents (USD).",
 });
+
+/** Unit price × quantity. Both are integers, so the product is exact. */
+export const lineTotalCents = (unitPriceCents: number, quantity: number): number =>
+  unitPriceCents * quantity;

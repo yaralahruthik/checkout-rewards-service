@@ -1,5 +1,11 @@
 import { Context, Effect, Layer, Option } from "effect";
-import { Product, ProductId, ProductNotFound, ProductUpdate } from "./ProductsApi.ts";
+import {
+  Product,
+  ProductId,
+  ProductNotFound,
+  ProductUpdate,
+  productNotFound,
+} from "./ProductsApi.ts";
 import { ProductRepository } from "./ProductRepository.ts";
 
 export class ProductService extends Context.Service<
@@ -23,10 +29,7 @@ export class ProductService extends Context.Service<
       ) {
         const product = yield* repository.update(id, update);
         if (Option.isNone(product)) {
-          return yield* new ProductNotFound({
-            message: `Product ${id} does not exist`,
-            details: { productId: id },
-          });
+          return yield* productNotFound(id);
         }
         return product.value;
       });

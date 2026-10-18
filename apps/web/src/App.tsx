@@ -1,10 +1,12 @@
 import { useSyncExternalStore } from "react";
 import { AdminPage } from "@/features/admin/AdminPage";
+import { CartPage } from "@/features/cart/CartPage";
 import { CatalogPage } from "@/features/catalog/CatalogPage";
 import { cn } from "@/lib/utils";
 
 const pages = [
   { hash: "#/", label: "Catalog", Page: CatalogPage },
+  { hash: "#/cart", label: "Cart", Page: CartPage },
   { hash: "#/admin", label: "Admin", Page: AdminPage },
 ] as const;
 

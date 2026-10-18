@@ -107,6 +107,27 @@ This file is written incrementally as the service is built. Sections for invaria
 
 **Consequences:** Anyone who can reach the API can change prices and stock. This is acceptable for a local demo and is not acceptable in production.
 
+## Decision: Carts — anonymous bearer ids, set-quantity lines, live prices, no reservation
+
+**Context:** The assignment leaves open what happens when a price or stock level changes between adding an item and checking out. Clients also retry requests, so adding an item must not double it.
+
+**Choice:**
+
+- **Anonymous bearer carts.** `POST /api/carts` returns a cart whose id is a UUIDv7 (`node:crypto` `randomUUIDv7`, behind the `Ids` reference so tests can supply their own). The id is the only credential: there are no accounts. Carts never expire.
+- **Set-quantity semantics.** `PUT /api/carts/{id}/items/{productId}` with `{ quantity }` creates the line or replaces its quantity (an upsert on the `(cart_id, product_id)` primary key). There is no increment. `DELETE` removes the line, and removing a product that is not in the cart is a no-op that returns the cart. Every cart write returns the full cart view.
+- **Validation on set.** The quantity must be an integer from 1 to 99 (schema → `400 VALIDATION_ERROR`, plus a `CHECK` on the column), the product must exist (`404 PRODUCT_NOT_FOUND`, plus a foreign key), and the quantity must not exceed current inventory (`409 INSUFFICIENT_INVENTORY`, the same error checkout uses, listing short lines with requested and available quantities). A malformed cart id is a `400`; a well-formed id with no cart is `404 CART_NOT_FOUND`.
+- **Live prices.** Cart lines store no price. `GET /api/carts/{id}` joins each line to the product's current price and inventory, and returns `unitPriceCents`, `lineTotalCents`, `availableInventory` and an `insufficientStock` flag per line, plus `itemCount` (total units) and `subtotalCents`.
+- **No reservation.** Adding to a cart holds no inventory. The stock check on set is a soft check against stock as it is at that moment; checkout re-checks authoritatively with a conditional decrement.
+
+**Why:**
+
+- A UUIDv7 carries 74 random bits, so a cart cannot be guessed or enumerated, while its time ordering keeps the primary-key index append-friendly. Accounts would add login to every evaluator request without exercising any invariant.
+- An absolute quantity is idempotent: retrying the same `PUT` leaves the same state. An "add one" operation would double on a retried request. The SPA's "Add to cart" sends the current quantity plus one, which is still absolute on the wire.
+- Live pricing means the cart always shows the price the shopper would actually pay. A price stored at add-to-cart would either be honoured (the store sells at a stale price) or silently replaced at checkout (the shopper pays an amount they never saw). Checkout's price guard (ticket 05) closes the remaining gap between viewing the cart and checking out.
+- Reserving stock at add-to-cart lets abandoned carts block other shoppers indefinitely, and carts never expire. The `insufficientStock` flag tells the shopper which lines to fix when stock drops below their quantity.
+
+**Consequences:** A shopper can see a line become short, or a total change, between visits. That is deliberate and visible in the cart view. Anyone holding a cart id can read and change that cart.
+
 ## Configuration
 
 `n` and `x` are read from `COUPON_EVERY_N_ORDERS` (default 5, integer ≥ 1) and `COUPON_DISCOUNT_PERCENT` (default 10, integer 1–100). `DATABASE_PATH` and `PORT` are also read from the environment. Startup loads all of them through one validated `Config`, so an invalid value stops the process before it listens.

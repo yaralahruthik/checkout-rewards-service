@@ -15,3 +15,5 @@
 - [ ] OpenAPI document regenerated and committed
 - [ ] (UI, cuttable) Checkout always sends the displayed subtotal; on `PRICE_CHANGED`, a dialog shows the new totals and confirming resends; TanStack Query auto-retry is disabled for checkout; a manual "retry checkout" action shows the same order coming back
 - [ ] `DECISIONS.md` records the cart as the natural idempotency key, the replay-vs-conflict rule, when an `Idempotency-Key` header would become necessary, and why the subtotal (not the total) is guarded
+
+**Note from 03:** `CartService.setQuantity`/`removeItem` currently read the cart, then write in a separate statement. Enforce `CART_NOT_OPEN` by making the line write conditional on `carts.status = 'OPEN'` (in the same statement), not by checking the status from that read, or a checkout can land between check and write. The SPA also only forgets a stored cart id on `CART_NOT_FOUND`; after checkout it should start a new cart.

@@ -43,6 +43,240 @@
         "summary": "List products"
       }
     },
+    "/api/carts": {
+      "post": {
+        "tags": [
+          "Carts"
+        ],
+        "operationId": "carts.createCart",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "201": {
+            "description": "The cart priced at current product prices. Totals change when prices change; nothing is reserved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not match the endpoint's schema.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Creates an empty open cart. Keep its id: it is the only way to reach the cart.",
+        "summary": "Create a cart"
+      }
+    },
+    "/api/carts/{id}": {
+      "get": {
+        "tags": [
+          "Carts"
+        ],
+        "operationId": "carts.getCart",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/CartId"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The cart priced at current product prices. Totals change when prices change; nothing is reserved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart_1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not match the endpoint's schema.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No cart has the given id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CartNotFoundEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Each line with its live unit price, line total and available inventory, plus the subtotal.",
+        "summary": "Get a cart"
+      }
+    },
+    "/api/carts/{id}/items/{productId}": {
+      "put": {
+        "tags": [
+          "Carts"
+        ],
+        "operationId": "carts.setItemQuantity",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/CartId"
+            },
+            "required": true
+          },
+          {
+            "name": "productId",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/ProductIdEncoded"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The cart priced at current product prices. Totals change when prices change; nothing is reserved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart_1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not match the endpoint's schema.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No cart has the given id. | No product has the given id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CartNotFoundEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProductNotFoundEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A requested quantity exceeds the product's available inventory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsufficientInventoryEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Creates the line or replaces its quantity. Never adds to the existing quantity, so retrying is safe. The quantity is checked against current inventory, but nothing is reserved: checkout checks again.",
+        "summary": "Set an item's quantity",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetQuantity"
+              }
+            }
+          },
+          "required": true
+        }
+      },
+      "delete": {
+        "tags": [
+          "Carts"
+        ],
+        "operationId": "carts.removeItem",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/CartId"
+            },
+            "required": true
+          },
+          {
+            "name": "productId",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/ProductIdEncoded"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The cart priced at current product prices. Totals change when prices change; nothing is reserved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cart_1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not match the endpoint's schema.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No cart has the given id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CartNotFoundEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Deletes the product's line. Removing a product that is not in the cart changes nothing, so retrying is safe.",
+        "summary": "Remove an item"
+      }
+    },
     "/api/admin/products/{id}": {
       "patch": {
         "tags": [
@@ -268,6 +502,234 @@
         },
         "additionalProperties": false,
         "minProperties": 1
+      },
+      "CartNotFoundEncoded": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "CART_NOT_FOUND"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "properties": {
+              "cartId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cartId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "additionalProperties": false
+      },
+      "Cart_1": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/CartId"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CartStatus"
+          },
+          "itemCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "subtotalCents": {
+            "$ref": "#/components/schemas/Cents"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CartLine"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "itemCount",
+          "subtotalCents",
+          "lines"
+        ],
+        "additionalProperties": false,
+        "description": "The cart priced at current product prices. Totals change when prices change; nothing is reserved."
+      },
+      "CartLine": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "$ref": "#/components/schemas/ProductId"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "quantity": {
+            "$ref": "#/components/schemas/Quantity"
+          },
+          "unitPriceCents": {
+            "$ref": "#/components/schemas/Cents"
+          },
+          "lineTotalCents": {
+            "$ref": "#/components/schemas/Cents"
+          },
+          "availableInventory": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "insufficientStock": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "productId",
+          "productName",
+          "quantity",
+          "unitPriceCents",
+          "lineTotalCents",
+          "availableInventory",
+          "insufficientStock"
+        ],
+        "additionalProperties": false
+      },
+      "Quantity": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 99,
+        "description": "Units of a product on one cart line: an integer from 1 to 99."
+      },
+      "CartStatus": {
+        "type": "string",
+        "enum": [
+          "OPEN",
+          "CHECKED_OUT"
+        ]
+      },
+      "CartId": {
+        "type": "string",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "format": "uuid",
+        "description": "A UUIDv7. Anyone holding it can read and change the cart."
+      },
+      "InsufficientInventoryEncoded": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "INSUFFICIENT_INVENTORY"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "properties": {
+              "lines": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ShortLine"
+                }
+              }
+            },
+            "required": [
+              "lines"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "additionalProperties": false
+      },
+      "ShortLine": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "$ref": "#/components/schemas/ProductId"
+          },
+          "requestedQuantity": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "availableInventory": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "productId",
+          "requestedQuantity",
+          "availableInventory"
+        ],
+        "additionalProperties": false
+      },
+      "SetQuantity": {
+        "type": "object",
+        "properties": {
+          "quantity": {
+            "$ref": "#/components/schemas/Quantity"
+          }
+        },
+        "required": [
+          "quantity"
+        ],
+        "additionalProperties": false
+      },
+      "Cart": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/CartId"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CartStatus"
+          },
+          "itemCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "subtotalCents": {
+            "$ref": "#/components/schemas/Cents"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CartLine"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "itemCount",
+          "subtotalCents",
+          "lines"
+        ],
+        "additionalProperties": false,
+        "description": "The cart priced at current product prices. Totals change when prices change; nothing is reserved."
       }
     },
     "securitySchemes": {}
@@ -276,6 +738,9 @@
   "tags": [
     {
       "name": "Products"
+    },
+    {
+      "name": "Carts"
     },
     {
       "name": "Admin: products"

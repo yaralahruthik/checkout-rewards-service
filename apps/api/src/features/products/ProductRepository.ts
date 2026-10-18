@@ -6,6 +6,7 @@ export class ProductRepository extends Context.Service<
   ProductRepository,
   {
     readonly list: Effect.Effect<ReadonlyArray<Product>>;
+    readonly findById: (id: ProductId) => Effect.Effect<Option.Option<Product>>;
     /** Applies the update and returns the product, or `None` if it does not exist. */
     readonly update: (
       id: ProductId,
@@ -23,6 +24,12 @@ export class ProductRepository extends Context.Service<
         Result: Product,
         execute: () => sql`SELECT * FROM products ORDER BY id`,
       })().pipe(Effect.orDie, Effect.withSpan("ProductRepository.list"));
+
+      const findById = SqlSchema.findOneOption({
+        Request: ProductId,
+        Result: Product,
+        execute: (id) => sql`SELECT * FROM products WHERE id = ${id}`,
+      });
 
       // One statement, so the read-back can never disagree with the write.
       const updateQuery = SqlSchema.findOneOption({
@@ -52,7 +59,12 @@ export class ProductRepository extends Context.Service<
         });
       }, Effect.orDie);
 
-      return ProductRepository.of({ list, update });
+      return ProductRepository.of({
+        list,
+        findById: (id) =>
+          findById(id).pipe(Effect.orDie, Effect.withSpan("ProductRepository.findById")),
+        update,
+      });
     }),
   );
 }
