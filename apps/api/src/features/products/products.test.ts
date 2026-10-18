@@ -33,7 +33,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const response = yield* HttpClient.patch("/api/admin/products/6", {
-        body: HttpBody.jsonUnsafe({ unitPriceCents: 5499, inventory: 0 }),
+        body: HttpBody.jsonUnsafe({ unitPriceCents: 5499, availableInventory: 0 }),
       });
 
       assert.strictEqual(response.status, 200);
@@ -54,9 +54,9 @@ it.effect(
     Effect.gen(function* () {
       const invalidBodies = [
         { unitPriceCents: -1 },
-        { inventory: 2.5 },
+        { availableInventory: 2.5 },
         { unitPriceCents: "1999" },
-        { unitPriceCents: 1999, inventory: -3 },
+        { unitPriceCents: 1999, availableInventory: -3 },
         {},
       ];
 

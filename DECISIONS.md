@@ -97,7 +97,7 @@ This file is written incrementally as the service is built. Sections for invaria
   - generating coupons, listing coupons, listing orders, and the report, which later tickets add.
 - Shopper operations stay public: the catalog, carts, checkout, and reading an order by id.
 - Each administrative group ends with `.prefix("/admin").middleware(AdminAuth)`. `AdminAuth` (`apps/api/src/shared/admin.ts`) is the single seam for authentication. Today it passes every request through.
-- A product update takes absolute values, not deltas. `unitPriceCents` and `inventory` are both optional, but at least one is required. Each must be a non-negative integer.
+- A product update takes absolute values, not deltas. `unitPriceCents` and `availableInventory` are both optional (the same names `GET /api/products` returns), but at least one is required. Each must be a non-negative integer.
 
 **Why:**
 

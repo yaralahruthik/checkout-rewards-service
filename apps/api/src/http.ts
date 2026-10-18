@@ -1,7 +1,7 @@
 import { Layer } from "effect";
 import { HttpApiBuilder, HttpApiScalar } from "effect/http-api";
 import { Api } from "./Api.ts";
-import { AdminProductsHandlers, ProductsHandlers } from "./features/products/products.http.ts";
+import { ProductsHandlers } from "./features/products/products.http.ts";
 import { AdminAuthLive } from "./shared/admin.ts";
 import { RequestValidationLive } from "./shared/errors.ts";
 
@@ -12,7 +12,7 @@ import { RequestValidationLive } from "./shared/errors.ts";
  */
 // Handler groups capture the API-wide middleware when they are built, so the
 // middleware is provided to them rather than to the router.
-const Handlers = Layer.mergeAll(ProductsHandlers, AdminProductsHandlers).pipe(
+const Handlers = Layer.mergeAll(ProductsHandlers).pipe(
   Layer.provideMerge(Layer.mergeAll(RequestValidationLive, AdminAuthLive)),
 );
 

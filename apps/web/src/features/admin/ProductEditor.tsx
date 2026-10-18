@@ -19,7 +19,7 @@ import { formatCents } from "@/lib/money";
  */
 const toUpdate = (price: string, inventory: string): ProductUpdate => ({
   ...(price.trim() === "" ? {} : { unitPriceCents: Number(price) }),
-  ...(inventory.trim() === "" ? {} : { inventory: Number(inventory) }),
+  ...(inventory.trim() === "" ? {} : { availableInventory: Number(inventory) }),
 });
 
 const ProductRow = ({ product }: { readonly product: Product }) => {

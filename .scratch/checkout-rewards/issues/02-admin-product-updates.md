@@ -6,7 +6,7 @@
 
 **Status:** done
 
-- [x] `PATCH /api/admin/products/{id}` accepts an optional `unitPriceCents` and an optional `inventory`; both are absolute values, integers, and non-negative
+- [x] `PATCH /api/admin/products/{id}` accepts an optional `unitPriceCents` and an optional `availableInventory`; both are absolute values, integers, and non-negative
 - [x] Invalid bodies return 400 `VALIDATION_ERROR`; an unknown product returns 404 `PRODUCT_NOT_FOUND`; the response is the updated product
 - [x] Admin routes are grouped under `/api/admin`, with a single, documented seam where authentication would be added
 - [x] The change is visible through `GET /api/products`

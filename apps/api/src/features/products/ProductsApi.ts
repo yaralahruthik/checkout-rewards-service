@@ -27,9 +27,11 @@ export class ProductNotFound extends Schema.Error<ProductNotFound>("ProductNotFo
 /** Both fields are absolute values; at least one must be present. */
 export const ProductUpdate = Schema.Struct({
   unitPriceCents: Schema.optionalKey(Cents),
-  inventory: Schema.optionalKey(Inventory),
+  availableInventory: Schema.optionalKey(Inventory),
 })
-  .check(Schema.isMinProperties(1, { message: "Provide unitPriceCents, inventory, or both" }))
+  .check(
+    Schema.isMinProperties(1, { message: "Provide unitPriceCents, availableInventory, or both" }),
+  )
   .annotate({ identifier: "ProductUpdate" });
 export type ProductUpdate = typeof ProductUpdate.Type;
 

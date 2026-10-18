@@ -1,38 +1,28 @@
-import { Effect, Layer, Option } from "effect";
+import { Effect, Layer } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { Api } from "../../Api.ts";
-import { ProductNotFound } from "./ProductsApi.ts";
-import { ProductRepository } from "./ProductRepository.ts";
+import { ProductService } from "./ProductService.ts";
 
-export const ProductsHandlers = HttpApiBuilder.group(
+const ProductsGroup = HttpApiBuilder.group(
   Api,
   "products",
   Effect.fn("ProductsHandlers")(function* (handlers) {
-    const products = yield* ProductRepository;
+    const products = yield* ProductService;
     return handlers.handle("listProducts", () => products.list);
   }),
-).pipe(Layer.provide(ProductRepository.layer));
+);
 
-export const AdminProductsHandlers = HttpApiBuilder.group(
+const AdminProductsGroup = HttpApiBuilder.group(
   Api,
   "adminProducts",
   Effect.fn("AdminProductsHandlers")(function* (handlers) {
-    const products = yield* ProductRepository;
+    const products = yield* ProductService;
     return handlers.handle("updateProduct", ({ params, payload }) =>
-      products.update(params.id, payload).pipe(
-        Effect.flatMap(
-          Option.match({
-            onNone: () =>
-              Effect.fail(
-                new ProductNotFound({
-                  message: `Product ${params.id} does not exist`,
-                  details: { productId: params.id },
-                }),
-              ),
-            onSome: Effect.succeed,
-          }),
-        ),
-      ),
+      products.update(params.id, payload),
     );
   }),
-).pipe(Layer.provide(ProductRepository.layer));
+);
+
+export const ProductsHandlers = Layer.mergeAll(ProductsGroup, AdminProductsGroup).pipe(
+  Layer.provide(ProductService.layer),
+);

@@ -29,13 +29,13 @@ export class ProductRepository extends Context.Service<
         Request: Schema.Struct({
           id: ProductId,
           unitPriceCents: Schema.NullOr(Schema.Int),
-          inventory: Schema.NullOr(Schema.Int),
+          availableInventory: Schema.NullOr(Schema.Int),
         }),
         Result: Product,
-        execute: ({ id, unitPriceCents, inventory }) => sql`
+        execute: ({ id, unitPriceCents, availableInventory }) => sql`
           UPDATE products
           SET unit_price_cents = COALESCE(${unitPriceCents}, unit_price_cents),
-              available_inventory = COALESCE(${inventory}, available_inventory)
+              available_inventory = COALESCE(${availableInventory}, available_inventory)
           WHERE id = ${id}
           RETURNING *
         `,
@@ -48,7 +48,7 @@ export class ProductRepository extends Context.Service<
         return yield* updateQuery({
           id,
           unitPriceCents: update.unitPriceCents ?? null,
-          inventory: update.inventory ?? null,
+          availableInventory: update.availableInventory ?? null,
         });
       }, Effect.orDie);
 
