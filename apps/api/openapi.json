@@ -277,6 +277,139 @@
         "summary": "Remove an item"
       }
     },
+    "/api/carts/{id}/checkout": {
+      "post": {
+        "tags": [
+          "Checkout"
+        ],
+        "operationId": "checkout.checkout",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/CartId"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "201": {
+            "description": "A placed order. Its lines and totals never change after checkout.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not match the endpoint's schema.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No cart has the given id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CartNotFoundEncoded"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The cart was already checked out; `orderId` is the order it produced. | A requested quantity exceeds the product's available inventory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CartAlreadyCheckedOutEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InsufficientInventoryEncoded"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The cart has no lines, so there is nothing to order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmptyCartEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "In one transaction: closes the cart, prices its lines at current prices, takes the stock, and records the order with snapshots of every line. If any step fails, nothing changes: the cart stays open and stock is untouched.",
+        "summary": "Check out a cart"
+      }
+    },
+    "/api/orders/{id}": {
+      "get": {
+        "tags": [
+          "Orders"
+        ],
+        "operationId": "orders.getOrder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/OrderId"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "A placed order. Its lines and totals never change after checkout.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order_1"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not match the endpoint's schema.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No order has the given id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderNotFoundEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "The order with its line snapshots and how its total was calculated.",
+        "summary": "Get an order"
+      }
+    },
     "/api/admin/products/{id}": {
       "patch": {
         "tags": [
@@ -503,6 +636,239 @@
         "additionalProperties": false,
         "minProperties": 1
       },
+      "OrderNotFoundEncoded": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "ORDER_NOT_FOUND"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "properties": {
+              "orderId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "orderId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "additionalProperties": false
+      },
+      "Order_1": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/OrderId"
+          },
+          "subtotalCents": {
+            "$ref": "#/components/schemas/Cents"
+          },
+          "discountCents": {
+            "$ref": "#/components/schemas/Cents"
+          },
+          "totalCents": {
+            "$ref": "#/components/schemas/Cents"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "When the order was placed (ISO 8601, UTC)."
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderLine"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "subtotalCents",
+          "discountCents",
+          "totalCents",
+          "createdAt",
+          "lines"
+        ],
+        "additionalProperties": false,
+        "description": "A placed order. Its lines and totals never change after checkout."
+      },
+      "OrderLine": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "$ref": "#/components/schemas/ProductId"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "unitPriceCents": {
+            "$ref": "#/components/schemas/Cents"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "lineTotalCents": {
+            "$ref": "#/components/schemas/Cents"
+          }
+        },
+        "required": [
+          "productId",
+          "productName",
+          "unitPriceCents",
+          "quantity",
+          "lineTotalCents"
+        ],
+        "additionalProperties": false,
+        "description": "The product's name and price as they were at checkout."
+      },
+      "OrderId": {
+        "type": "string",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "format": "uuid",
+        "description": "A UUIDv7."
+      },
+      "EmptyCartEncoded": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "EMPTY_CART"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "properties": {
+              "cartId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cartId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "additionalProperties": false
+      },
+      "InsufficientInventoryEncoded": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "INSUFFICIENT_INVENTORY"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "properties": {
+              "lines": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ShortLine"
+                }
+              }
+            },
+            "required": [
+              "lines"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "additionalProperties": false
+      },
+      "ShortLine": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "$ref": "#/components/schemas/ProductId"
+          },
+          "requestedQuantity": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "availableInventory": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "productId",
+          "requestedQuantity",
+          "availableInventory"
+        ],
+        "additionalProperties": false
+      },
+      "CartAlreadyCheckedOutEncoded": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "CART_ALREADY_CHECKED_OUT"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "properties": {
+              "cartId": {
+                "type": "string"
+              },
+              "orderId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cartId",
+              "orderId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "additionalProperties": false
+      },
       "CartNotFoundEncoded": {
         "type": "object",
         "properties": {
@@ -535,6 +901,49 @@
         ],
         "additionalProperties": false
       },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/OrderId"
+          },
+          "subtotalCents": {
+            "$ref": "#/components/schemas/Cents"
+          },
+          "discountCents": {
+            "$ref": "#/components/schemas/Cents"
+          },
+          "totalCents": {
+            "$ref": "#/components/schemas/Cents"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "When the order was placed (ISO 8601, UTC)."
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderLine"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "subtotalCents",
+          "discountCents",
+          "totalCents",
+          "createdAt",
+          "lines"
+        ],
+        "additionalProperties": false,
+        "description": "A placed order. Its lines and totals never change after checkout."
+      },
+      "CartId": {
+        "type": "string",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "format": "uuid",
+        "description": "A UUIDv7. Anyone holding it can read and change the cart."
+      },
       "Cart_1": {
         "type": "object",
         "properties": {
@@ -557,6 +966,9 @@
             "items": {
               "$ref": "#/components/schemas/CartLine"
             }
+          },
+          "orderId": {
+            "$ref": "#/components/schemas/OrderId"
           }
         },
         "required": [
@@ -620,71 +1032,6 @@
           "CHECKED_OUT"
         ]
       },
-      "CartId": {
-        "type": "string",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "format": "uuid",
-        "description": "A UUIDv7. Anyone holding it can read and change the cart."
-      },
-      "InsufficientInventoryEncoded": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string",
-            "enum": [
-              "INSUFFICIENT_INVENTORY"
-            ]
-          },
-          "message": {
-            "type": "string"
-          },
-          "details": {
-            "type": "object",
-            "properties": {
-              "lines": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/ShortLine"
-                }
-              }
-            },
-            "required": [
-              "lines"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "required": [
-          "code",
-          "message",
-          "details"
-        ],
-        "additionalProperties": false
-      },
-      "ShortLine": {
-        "type": "object",
-        "properties": {
-          "productId": {
-            "$ref": "#/components/schemas/ProductId"
-          },
-          "requestedQuantity": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991
-          },
-          "availableInventory": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          }
-        },
-        "required": [
-          "productId",
-          "requestedQuantity",
-          "availableInventory"
-        ],
-        "additionalProperties": false
-      },
       "SetQuantity": {
         "type": "object",
         "properties": {
@@ -719,6 +1066,9 @@
             "items": {
               "$ref": "#/components/schemas/CartLine"
             }
+          },
+          "orderId": {
+            "$ref": "#/components/schemas/OrderId"
           }
         },
         "required": [
@@ -741,6 +1091,12 @@
     },
     {
       "name": "Carts"
+    },
+    {
+      "name": "Checkout"
+    },
+    {
+      "name": "Orders"
     },
     {
       "name": "Admin: products"

@@ -1,5 +1,5 @@
 import { Context, DateTime, Effect, Layer, Option } from "effect";
-import { lineTotalCents } from "../../shared/money.ts";
+import { lineTotalCents, subtotalCents } from "../../shared/money.ts";
 import { Ids } from "../../shared/ids.ts";
 import {
   InsufficientInventory,
@@ -9,7 +9,7 @@ import {
   productNotFound,
 } from "../products/ProductsApi.ts";
 import { ProductRepository } from "../products/ProductRepository.ts";
-import { Cart, CartId, CartNotFound, SetQuantity } from "./CartsApi.ts";
+import { Cart, CartId, CartNotFound, SetQuantity, cartNotFound } from "./CartsApi.ts";
 import { CartRepository, type CartRow, type LineRow } from "./CartRepository.ts";
 
 /** Prices the lines at the prices they were read with. */
@@ -23,8 +23,9 @@ const toCart = (cart: CartRow, rows: ReadonlyArray<LineRow>): Cart => {
     id: cart.id,
     status: cart.status,
     itemCount: lines.reduce((sum, line) => sum + line.quantity, 0),
-    subtotalCents: lines.reduce((sum, line) => sum + line.lineTotalCents, 0),
+    subtotalCents: subtotalCents(lines),
     lines,
+    ...(cart.orderId === null ? {} : { orderId: cart.orderId }),
   };
 };
 
@@ -57,10 +58,7 @@ export class CartService extends Context.Service<
       const find = Effect.fn("CartService.find")(function* (id: CartId) {
         const cart = yield* repository.findById(id);
         if (Option.isNone(cart)) {
-          return yield* new CartNotFound({
-            message: `Cart ${id} does not exist`,
-            details: { cartId: id },
-          });
+          return yield* cartNotFound(id);
         }
         return cart.value;
       });

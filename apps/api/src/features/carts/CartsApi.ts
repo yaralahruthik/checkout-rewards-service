@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
 import { errorFields } from "../../shared/errors.ts";
 import { Cents } from "../../shared/money.ts";
+import { OrderId } from "../orders/OrdersApi.ts";
 import {
   InsufficientInventory,
   Inventory,
@@ -46,6 +47,8 @@ export const Cart = Schema.Struct({
   itemCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   subtotalCents: Cents,
   lines: Schema.Array(CartLine),
+  /** Present once the cart is checked out: the order it produced. */
+  orderId: Schema.optionalKey(OrderId),
 }).annotate({
   identifier: "Cart",
   description:
@@ -62,6 +65,9 @@ export class CartNotFound extends Schema.Error<CartNotFound>("CartNotFound")(
   errorFields("CART_NOT_FOUND", Schema.Struct({ cartId: Schema.String })),
   { httpApiStatus: 404, description: "No cart has the given id." },
 ) {}
+
+export const cartNotFound = (cartId: CartId) =>
+  new CartNotFound({ message: `Cart ${cartId} does not exist`, details: { cartId } });
 
 export class CartsApi extends HttpApiGroup.make("carts")
   .add(

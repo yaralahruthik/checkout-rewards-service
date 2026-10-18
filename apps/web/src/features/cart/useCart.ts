@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ApiError } from "@/api/fetcher";
 import {
@@ -8,7 +9,10 @@ import {
   useCartsRemoveItem,
   useCartsSetItemQuantity,
 } from "@/api/generated/carts/carts";
-import type { Cart } from "@/api/generated/model";
+import { useCheckoutCheckout } from "@/api/generated/checkout/checkout";
+import type { Cart, Order } from "@/api/generated/model";
+import { getOrdersGetOrderQueryKey } from "@/api/generated/orders/orders";
+import { getProductsListProductsQueryKey } from "@/api/generated/products/products";
 import { toastApiError } from "@/api/toastApiError";
 
 const STORAGE_KEY = "cartId";
@@ -41,6 +45,7 @@ const useCartId = () => useSyncExternalStore(subscribe, readCartId);
  */
 export const useCart = () => {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const cartId = useCartId();
   const [creating, setCreating] = useState(false);
   const cart = useCartsGetCart<Cart, ApiError>(cartId ?? "", {
@@ -61,6 +66,30 @@ export const useCart = () => {
   const removeItem = useCartsRemoveItem<ApiError>({
     mutation: { onSuccess, onError: toastApiError },
   });
+
+  // Checkout is never retried automatically: a retry should be the shopper's choice.
+  const checkoutCart = useCheckoutCheckout<ApiError>({
+    mutation: {
+      retry: false,
+      onSuccess: (order: Order, { id }) => {
+        queryClient.setQueryData(getOrdersGetOrderQueryKey(order.id), order);
+        void queryClient.invalidateQueries({ queryKey: getCartsGetCartQueryKey(id) });
+        void queryClient.invalidateQueries({ queryKey: getProductsListProductsQueryKey() });
+        // The cart is closed now: the next item starts a new one.
+        writeCartId(null);
+        void navigate({ to: "/orders/$orderId", params: { orderId: order.id } });
+      },
+      onError: (error, { id }) => {
+        toastApiError(error);
+        // Stock may have moved: refresh the lines' stock warnings.
+        void queryClient.invalidateQueries({ queryKey: getCartsGetCartQueryKey(id) });
+      },
+    },
+  });
+
+  const checkout = () => {
+    if (cartId !== null) checkoutCart.mutate({ id: cartId });
+  };
 
   const setQuantity = async (productId: number, quantity: number) => {
     let id = cartId;
@@ -96,9 +125,15 @@ export const useCart = () => {
     error: lostCart ? null : cart.error,
     // Writes wait for the cart to exist and load: quantities are absolute, so
     // one computed from a cart that has not loaded yet would overwrite the real one.
-    isPending: isLoading || creating || setItemQuantity.isPending || removeItem.isPending,
+    isPending:
+      isLoading ||
+      creating ||
+      setItemQuantity.isPending ||
+      removeItem.isPending ||
+      checkoutCart.isPending,
     setQuantity,
     remove,
+    checkout,
     quantityOf,
   };
 };

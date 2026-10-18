@@ -1,10 +1,12 @@
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { SqlClient, SqlSchema } from "effect/sql";
+import { OrderId } from "../orders/OrdersApi.ts";
 import { Inventory, ProductId } from "../products/ProductsApi.ts";
 import { Cents } from "../../shared/money.ts";
 import { CartId, CartStatus, Quantity } from "./CartsApi.ts";
 
-const CartRow = Schema.Struct({ id: CartId, status: CartStatus });
+/** `orderId` is the order the cart produced, once it is checked out. */
+const CartRow = Schema.Struct({ id: CartId, status: CartStatus, orderId: Schema.NullOr(OrderId) });
 export type CartRow = typeof CartRow.Type;
 
 /** A cart line joined with the product's current name, price and stock. */
@@ -25,6 +27,11 @@ export class CartRepository extends Context.Service<
       readonly createdAt: string;
     }) => Effect.Effect<CartRow>;
     readonly findById: (id: CartId) => Effect.Effect<Option.Option<CartRow>>;
+    /**
+     * Moves the cart from `OPEN` to `CHECKED_OUT` in one conditional update.
+     * `false` when no open cart has the id.
+     */
+    readonly claim: (id: CartId) => Effect.Effect<boolean>;
     /** The cart's lines in product-id order. */
     readonly lines: (id: CartId) => Effect.Effect<ReadonlyArray<LineRow>>;
     /** Inserts the line, or replaces the quantity of an existing one. */
@@ -46,14 +53,18 @@ export class CartRepository extends Context.Service<
         Result: CartRow,
         execute: ({ id, createdAt }) => sql`
           INSERT INTO carts (id, status, created_at) VALUES (${id}, 'OPEN', ${createdAt})
-          RETURNING id, status
+          RETURNING id, status, NULL AS order_id
         `,
       });
 
       const findById = SqlSchema.findOneOption({
         Request: CartId,
         Result: CartRow,
-        execute: (id) => sql`SELECT id, status FROM carts WHERE id = ${id}`,
+        execute: (id) => sql`
+          SELECT c.id, c.status, o.id AS order_id
+          FROM carts c LEFT JOIN orders o ON o.cart_id = c.id
+          WHERE c.id = ${id}
+        `,
       });
 
       const lines = SqlSchema.findAll({
@@ -67,6 +78,14 @@ export class CartRepository extends Context.Service<
           ORDER BY l.product_id
         `,
       });
+
+      const claim = Effect.fn("CartRepository.claim")(function* (id: CartId) {
+        const claimed = yield* sql`
+          UPDATE carts SET status = 'CHECKED_OUT' WHERE id = ${id} AND status = 'OPEN'
+          RETURNING id
+        `;
+        return claimed.length === 1;
+      }, Effect.orDie);
 
       const setQuantity = Effect.fn("CartRepository.setQuantity")(function* (
         id: CartId,
@@ -92,6 +111,7 @@ export class CartRepository extends Context.Service<
         findById: (id) =>
           findById(id).pipe(Effect.orDie, Effect.withSpan("CartRepository.findById")),
         lines: (id) => lines(id).pipe(Effect.orDie, Effect.withSpan("CartRepository.lines")),
+        claim,
         setQuantity,
         removeLine,
       });

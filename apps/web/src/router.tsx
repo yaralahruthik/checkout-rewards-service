@@ -1,7 +1,15 @@
-import { Link, Outlet, createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
+import {
+  Link,
+  Outlet,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  useParams,
+} from "@tanstack/react-router";
 import { AdminPage } from "@/features/admin/AdminPage";
 import { CartPage } from "@/features/cart/CartPage";
 import { CatalogPage } from "@/features/catalog/CatalogPage";
+import { OrderPage } from "@/features/orders/OrderPage";
 
 const navLinks = [
   { to: "/", label: "Catalog" },
@@ -36,9 +44,14 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: "/", component: CatalogPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/cart", component: CartPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/admin", component: AdminPage }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/orders/$orderId",
+    component: () => <OrderPage orderId={useParams({ from: "/orders/$orderId" }).orderId} />,
+  }),
 ]);
 
-/** Code-based routes: three pages do not need file-based routing and its codegen. */
+/** Code-based routes: four pages do not need file-based routing and its codegen. */
 export const router = createRouter({ routeTree });
 
 declare module "@tanstack/react-router" {

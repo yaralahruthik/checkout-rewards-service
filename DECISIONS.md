@@ -128,6 +128,48 @@ This file is written incrementally as the service is built. Sections for invaria
 
 **Consequences:** A shopper can see a line become short, or a total change, between visits. That is deliberate and visible in the cart view. Anyone holding a cart id can read and change that cart.
 
+## Decision: Checkout — one transaction, conditional writes, constraints behind them
+
+**Context:** Many shoppers check out at once against limited stock. The store must never oversell, a cart must produce at most one order, and a checkout that fails part-way must leave nothing behind.
+
+**Options considered:**
+
+- Read stock in the handler, check it, then write it (check-then-act).
+- Rely on SQLite's single writer to serialize checkouts.
+- A pessimistic lock (`SELECT ... FOR UPDATE`) on every product, then plain writes.
+- One transaction in which every write is a conditional update whose guard is in the statement itself, each backed by a schema constraint.
+
+**Choice:** The last. `POST /api/carts/{id}/checkout` (`apps/api/src/features/checkout/CheckoutService.ts`) runs inside `sql.withTransaction`, in this order. The step numbers follow SPEC.md; steps 4 (price guard) and 6 (coupon redemption) arrive with tickets 05 and 07.
+
+1. **Claim the cart:** `UPDATE carts SET status = 'CHECKED_OUT' WHERE id = ? AND status = 'OPEN'`. No row changed means the cart is missing (`404 CART_NOT_FOUND`) or already checked out (`409 CART_ALREADY_CHECKED_OUT` with the existing `orderId`; ticket 05 turns a matching retry into a replay).
+2. **Load the lines** in product-id order. None → `422 EMPTY_CART`.
+3. **Price them** at current prices: line total = unit price × quantity, subtotal = sum of line totals, all integer cents.
+4. **Take the stock**, line by line in product-id order: `UPDATE products SET available_inventory = available_inventory - q WHERE id = ? AND available_inventory >= q`. A line that changes no row is short; its current inventory is re-read for the error. Every line is attempted, so `409 INSUFFICIENT_INVENTORY` lists every short line with requested and available quantities.
+5. **Insert the order and its line snapshots** (product name, unit price, quantity, line total copied from step 3). Orders are read back from the snapshots only, never joined to products, so later catalog changes do not alter them.
+6. **Commit.** Any failure in an earlier step (a typed error or a defect) rolls the whole transaction back: the cart is `OPEN` again and no inventory moved.
+
+After a successful checkout, `GET /api/carts/{id}` shows `orderId`, and `GET /api/orders/{id}` returns the order.
+
+| Invariant                     | Guard in the statement                      | Constraint in the schema                                                                                          |
+| ----------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| No oversell                   | `available_inventory >= q` on the decrement | `CHECK (available_inventory >= 0)`                                                                                |
+| One order per cart            | `status = 'OPEN'` on the claim              | `UNIQUE (cart_id)` on `orders`                                                                                    |
+| Snapshots are self-consistent | —                                           | `CHECK (line_total_cents = unit_price_cents * quantity)`, `CHECK (total_cents = subtotal_cents - discount_cents)` |
+
+**Why:**
+
+- **The guard and the write are one statement,** so there is no gap between "is there enough?" and "take it" for another checkout to slip into. The constraint is the backstop: if a future change dropped the guard, the database would refuse the write instead of storing an oversold row.
+- **SQLite serialization is not relied upon.** `@effect/sql-sqlite-node` runs one connection behind a semaphore and starts transactions with `BEGIN IMMEDIATE`, so checkouts already run one at a time. That is a second line of defence, and the design holds without it.
+- **Portable to Postgres under READ COMMITTED.** There, a conditional `UPDATE` locks the row it changes. A concurrent `UPDATE` of the same row waits for that lock, then re-evaluates its `WHERE` against the newly committed row before writing. Two checkouts for the last unit therefore cannot both pass `available_inventory >= 1`, and two claims of the same cart cannot both see `status = 'OPEN'`. No `SERIALIZABLE` isolation, retry loop or `FOR UPDATE` is needed. The plain reads in steps 2–3 can be momentarily stale under READ COMMITTED, but correctness never depends on them: stock is decided by the guarded decrement, and the price read is the price snapshotted (ticket 05's guard rejects a subtotal the shopper did not see).
+- **Lock ordering.** Decrementing in product-id order means two checkouts that share products always lock those rows in the same order, so on Postgres they queue instead of deadlocking. It makes no difference on SQLite's single writer.
+- **Rollback rather than compensation.** Continuing past a short line and then failing is safe because nothing is visible until commit; undoing the earlier decrements is the transaction's job, not the code's.
+
+**Why the race tests are meaningful on a single connection:** the tests (`apps/api/src/features/checkout/checkout.test.ts`) fire genuinely concurrent requests as parallel fibers. The SQLite client serializes the transactions, so they cannot catch a database-level race. What they do catch is the realistic bug: a check-then-act that spans transactions, such as reading stock in the handler (or in its own transaction) and decrementing it in a later one. Fibers interleave at every effect boundary between transactions, so two checkouts can both read "3 left" before either writes, and such an implementation fails the oversell test. They cannot catch a read-then-write _inside_ one transaction, because the client holds the connection for the whole transaction: that case is covered by the guard being in the statement, and by the Postgres argument above, not by the tests. A mutation check confirmed the rollback test fails without the transaction.
+
+**Payment:** there is no payment integration. A committed checkout is treated as a successful payment, which keeps the transaction purely local. A real integration cannot charge a card inside a database transaction (the charge cannot be rolled back, and holding locks across a network call blocks other shoppers). The deferred design: commit the order as `PENDING` with stock taken, write a "charge" message to an outbox table in the same transaction, have a worker call the payment provider with the order id as its idempotency key, then mark the order `PAID` or compensate (cancel it and return the stock).
+
+**Consequences:** Stock is decided at checkout, not at add-to-cart, so a shopper can lose a race they could not see coming; the error says exactly which lines to fix. Each product row is a contention point under heavy demand for one item, which is acceptable at this scale.
+
 ## Configuration
 
 `n` and `x` are read from `COUPON_EVERY_N_ORDERS` (default 5, integer ≥ 1) and `COUPON_DISCOUNT_PERCENT` (default 10, integer 1–100). `DATABASE_PATH` and `PORT` are also read from the environment. Startup loads all of them through one validated `Config`, so an invalid value stops the process before it listens.

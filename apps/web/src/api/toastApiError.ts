@@ -6,6 +6,9 @@ const titles: Record<string, string> = {
   CART_NOT_FOUND: "Cart not found",
   PRODUCT_NOT_FOUND: "Product not found",
   INSUFFICIENT_INVENTORY: "Not enough stock",
+  EMPTY_CART: "Cart is empty",
+  CART_ALREADY_CHECKED_OUT: "Cart already checked out",
+  ORDER_NOT_FOUND: "Order not found",
 };
 
 /**

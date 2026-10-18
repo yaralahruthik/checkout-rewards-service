@@ -13,3 +13,7 @@ export const Cents = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).annotate
 /** Unit price × quantity. Both are integers, so the product is exact. */
 export const lineTotalCents = (unitPriceCents: number, quantity: number): number =>
   unitPriceCents * quantity;
+
+/** The sum of the line totals. */
+export const subtotalCents = (lines: ReadonlyArray<{ readonly lineTotalCents: number }>): number =>
+  lines.reduce((sum, line) => sum + line.lineTotalCents, 0);

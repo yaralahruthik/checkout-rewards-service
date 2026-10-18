@@ -12,6 +12,11 @@ export class ProductRepository extends Context.Service<
       id: ProductId,
       update: ProductUpdate,
     ) => Effect.Effect<Option.Option<Product>>;
+    /**
+     * Takes `quantity` units in one conditional update that only succeeds
+     * while at least that many are available. `false` when there are not.
+     */
+    readonly decrementInventory: (id: ProductId, quantity: number) => Effect.Effect<boolean>;
   }
 >()("api/products/ProductRepository") {
   static readonly layer = Layer.effect(
@@ -59,11 +64,26 @@ export class ProductRepository extends Context.Service<
         });
       }, Effect.orDie);
 
+      // The guard is in the statement itself, so no read-then-write gap exists
+      // for a concurrent checkout to slip into.
+      const decrementInventory = Effect.fn("ProductRepository.decrementInventory")(function* (
+        id: ProductId,
+        quantity: number,
+      ) {
+        const updated = yield* sql`
+          UPDATE products SET available_inventory = available_inventory - ${quantity}
+          WHERE id = ${id} AND available_inventory >= ${quantity}
+          RETURNING id
+        `;
+        return updated.length === 1;
+      }, Effect.orDie);
+
       return ProductRepository.of({
         list,
         findById: (id) =>
           findById(id).pipe(Effect.orDie, Effect.withSpan("ProductRepository.findById")),
         update,
+        decrementInventory,
       });
     }),
   );

@@ -6,11 +6,13 @@ import { SqlClient } from "effect/sql";
 import { AppConfig } from "../config.ts";
 import createProducts from "./migrations/0001_create_products.ts";
 import createCarts from "./migrations/0002_create_carts.ts";
+import createOrders from "./migrations/0003_create_orders.ts";
 import { seed } from "./seed.ts";
 
 const migrations = SqliteMigrator.fromRecord({
   "0001_create_products": createProducts,
   "0002_create_carts": createCarts,
+  "0003_create_orders": createOrders,
 });
 
 const migrateAndSeed = SqliteMigrator.run({ loader: migrations }).pipe(Effect.andThen(seed));

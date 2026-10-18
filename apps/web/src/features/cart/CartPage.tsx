@@ -69,6 +69,14 @@ export const CartPage = () => {
         <p className="text-destructive">Could not load the cart: {cart.error.message}</p>
       ) : cart.isLoading ? (
         <Skeleton className="h-48" />
+      ) : cart.data?.orderId !== undefined ? (
+        <p className="text-muted-foreground">
+          This cart has been checked out.{" "}
+          <Link to="/orders/$orderId" params={{ orderId: cart.data.orderId }} className="underline">
+            View the order
+          </Link>
+          .
+        </p>
       ) : cart.data === undefined || cart.data.lines.length === 0 ? (
         <p className="text-muted-foreground">
           Your cart is empty.{" "}
@@ -96,6 +104,11 @@ export const CartPage = () => {
             <p className="mt-1 text-sm text-muted-foreground">
               Prices are live: they reflect the current catalog until you check out.
             </p>
+            <div className="flex justify-end pt-4">
+              <Button disabled={cart.isPending} onClick={cart.checkout}>
+                Check out
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
