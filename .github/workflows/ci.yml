@@ -26,3 +26,11 @@ jobs:
 
       - name: Build
         run: vp run build
+
+      # The executable request examples, against a freshly started API on a
+      # new database. They fail on any undocumented status or error code.
+      - name: Request examples
+        run: |
+          node apps/api/src/main.ts &
+          curl -sf --retry 30 --retry-connrefused --retry-delay 1 localhost:3000/api/products > /dev/null
+          vp run examples

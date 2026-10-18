@@ -8,6 +8,7 @@
     "start": "node src/main.ts",
     "openapi": "node src/scripts/generate-openapi.ts",
     "db:reset": "node src/scripts/reset-db.ts",
+    "examples": "node examples/walkthrough.ts",
     "test": "vp test"
   },
   "dependencies": {

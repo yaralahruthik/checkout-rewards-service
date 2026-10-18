@@ -1,6 +1,60 @@
 # Decisions
 
-This file is written incrementally as the service is built. Sections for invariants, concurrency, money, errors, coupons, scale-out and AI usage are added by the tickets that introduce them.
+How the checkout and rewards service stays correct, and why it is built the way it is. The README covers setup and the endpoint table; `SPEC.md` is the spec written before building.
+
+**Contents**
+
+1. [System invariants](#system-invariants) and where each is enforced
+2. [Ambiguities and the semantics chosen](#ambiguities-and-the-semantics-chosen)
+3. Decisions (the material ones as Context / Options considered / Choice / Why / Consequences; the smaller ones keep only the parts that apply): [stack](#decision-stack--effect-4-http-api-on-node-24-react-spa), [persistence](#decision-persistence--sqlite-through-nodesqlite), [schema evolution](#decision-schema-evolution--numbered-migrations-and-an-idempotent-seed-on-startup), [repository shape](#decision-repository-shape--pnpm-workspace-with-two-apps-and-no-shared-contract-package), [error body](#decision-shared-error-body-and-request-validation), [admin operations](#decision-administrative-operations--under-apiadmin-with-no-authentication), [carts](#decision-carts--anonymous-bearer-ids-set-quantity-lines-live-prices-no-reservation), [checkout](#decision-checkout--one-transaction-conditional-writes-constraints-behind-them), [replay and price guard](#decision-checkout-replay-and-the-price-guard--the-cart-is-the-idempotency-key), [coupon generation](#decision-coupon-generation--lazy-counted-from-orders-one-guarded-insert), [coupon redemption](#decision-coupon-redemption--one-guarded-update-inside-checkout), [report](#decision-report-and-order-list--computed-on-read-no-counters-no-pagination)
+4. [Transaction, concurrency and idempotency strategy](#transaction-concurrency-and-idempotency-strategy)
+5. [Money and rounding](#money-and-rounding)
+6. [Error model](#error-model)
+7. [Implemented versus deferred](#implemented-versus-deferred)
+8. [Multiple instances and Postgres](#multiple-instances-and-postgres)
+9. [AI usage](#ai-usage)
+10. [What I would examine first with two more hours](#what-i-would-examine-first-with-two-more-hours)
+11. [Configuration](#configuration) and [toolchain notes](#toolchain-notes)
+
+## System invariants
+
+Each invariant has two independent guards: a condition inside the write statement that makes the operation refuse, and a schema constraint that refuses the row if the statement were ever wrong. Neither relies on SQLite running one transaction at a time. Test numbers in this file ("test 2") refer to the list in SPEC.md, Testing Decisions.
+
+| #   | Invariant                                                                              | Guard in the statement                                                                             | Constraint in the schema                                                                                          | Where                                                   | Test                                                     |
+| --- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------- |
+| 1   | Inventory never goes below zero (no oversell)                                          | `UPDATE products … WHERE id = ? AND available_inventory >= ?`                                      | `CHECK (available_inventory >= 0)`                                                                                | `ProductRepository.decrementInventory`, checkout step 5 | oversell race                                            |
+| 2   | A cart produces at most one order                                                      | `UPDATE carts SET status = 'CHECKED_OUT' WHERE id = ? AND status = 'OPEN'`                         | `UNIQUE (cart_id)` on `orders`                                                                                    | `CartRepository.claim`, checkout step 1                 | retry storm                                              |
+| 3   | A checked-out cart's lines never change                                                | `INSERT … SELECT … FROM carts WHERE status = 'OPEN'`; `DELETE … AND EXISTS (… status = 'OPEN')`    | —                                                                                                                 | `CartRepository.setQuantity`, `removeLine`              | replay tests (`CART_NOT_OPEN`)                           |
+| 4   | A coupon is redeemed at most once                                                      | `UPDATE coupons … WHERE code = ? AND redeemed_order_id IS NULL`                                    | `UNIQUE` index on `orders.coupon_code`; `UNIQUE (redeemed_order_id)` on `coupons`                                 | `CouponRepository.redeem`, checkout step 6              | coupon race                                              |
+| 5   | A failed checkout consumes nothing (cart, stock, coupon)                               | every checkout write is in one `sql.withTransaction`; any failure rolls all of them back           | —                                                                                                                 | `CheckoutService`                                       | failed-on-stock tests, coupon survives a failed checkout |
+| 6   | At most one coupon per milestone, and only once it is reached                          | one `INSERT … SELECT` computes the next milestone and checks `COUNT(orders)` in the same statement | `UNIQUE (milestone_order_count)`                                                                                  | `CouponRepository.issueNext`                            | generation race                                          |
+| 7   | An order explains itself and never changes after checkout                              | lines and amounts copied into `orders` / `order_lines`; reads never join `products`                | `CHECK (line_total_cents = unit_price_cents * quantity)`, `CHECK (total_cents = subtotal_cents - discount_cents)` | `OrderRepository.insert`, `findById`                    | price change and snapshot                                |
+| 8   | A total is never negative, and a discount never exceeds x%                             | `discountCents` floors and clamps to the subtotal                                                  | `CHECK (total_cents >= 0)`, `CHECK (discount_percent BETWEEN 1 AND 100)`                                          | `shared/money.ts`                                       | 1999 × 10% → 199                                         |
+| 9   | Money is exact                                                                         | integer cents only, `Cents` schema rejects non-integers at the edge                                | `STRICT` tables with `INTEGER` columns                                                                            | `shared/money.ts`, migrations                           | every amount assertion                                   |
+| 10  | The shopper is never charged a subtotal they did not see (when they say what they saw) | `expectedSubtotalCents` compared inside the checkout transaction, before any stock moves           | —                                                                                                                 | `CheckoutService`, step 4                               | price change                                             |
+| 11  | The report reconciles with the orders and coupons, and reading it changes nothing      | one `SELECT` over orders, order lines and coupons; no stored counters                              | the order amount `CHECK`s make gross − discounts = net hold row by row                                            | `ReportRepository`                                      | report reconciliation                                    |
+
+Two things are deliberately **not** invariants: a cart holding stock (carts reserve nothing; checkout decides), and a coupon being bound to a customer (there are no customers).
+
+## Ambiguities and the semantics chosen
+
+| Ambiguity in the brief                                               | Semantics chosen                                                                                                                                                                        | Where argued                  |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| Price changes between add-to-cart and checkout                       | Carts store no price and always show current prices. Checkout charges current prices, and refuses with `PRICE_CHANGED` if they differ from the `expectedSubtotalCents` the client sent. | Carts; replay and price guard |
+| Stock changes between add-to-cart and checkout                       | Nothing is reserved. Setting a quantity is soft-checked against current stock; the cart flags lines that became short; checkout decides authoritatively and lists every short line.     | Carts; checkout               |
+| What "retry" means for checkout, and how a retry is recognised       | The cart is the idempotency key. Same cart and same coupon code → replay (`200`, same order). Different coupon → `409 CART_ALREADY_CHECKED_OUT`.                                        | Replay and price guard        |
+| "Add an item" and "change its quantity" under retries                | One set-quantity `PUT` (replace, never add) and an idempotent `DELETE`. There is no increment.                                                                                          | Carts                         |
+| Valid quantities                                                     | Integers from 1 to 99 per line. Zero is not "remove"; that is `DELETE`.                                                                                                                 | Carts                         |
+| Is a discounted order counted towards the next milestone?            | Yes: every successfully placed order counts.                                                                                                                                            | Coupon generation             |
+| Eager or on-request coupon generation; what about skipped milestones | On request by an admin. Each request issues one coupon for the oldest unrewarded milestone, so backlog drains oldest first, one per request.                                            | Coupon generation             |
+| Who may redeem a coupon, and for how long                            | Bearer codes: anyone holding the code, once, no expiry.                                                                                                                                 | Coupon generation             |
+| Stacking, scope and rounding of discounts                            | One coupon per order, applied to the whole subtotal, floor(subtotal × x / 100), clamped so the total is never negative.                                                                 | Money and rounding            |
+| What a coupon is worth if x changes later                            | The percent is copied onto the coupon at generation; issued coupons never change. Changing n reinterprets future milestones (documented, not engineered).                               | Coupon generation             |
+| Which error wins when several apply                                  | Checkout order decides: empty cart, then price guard, then stock, then coupon. A request short on stock with a taken coupon gets `INSUFFICIENT_INVENTORY`.                              | Coupon redemption             |
+| Payment                                                              | None: a committed checkout is a successful payment. The pending → charge → confirm/compensate design with an outbox is described, not built.                                            | Checkout                      |
+| "Gross revenue before discounts"                                     | Sum of order subtotals at the prices charged (from snapshots), not current catalog prices.                                                                                              | Report                        |
+| Which operations are administrative                                  | Product updates, coupon generation and listing, the order list and the report, all under `/api/admin`. Reading one order by id is a shopper operation.                                  | Administrative operations     |
+| Currency                                                             | One implicit currency (USD), integer cents.                                                                                                                                             | Money and rounding            |
 
 ## Decision: Stack — Effect 4 HTTP API on Node 24, React SPA
 
@@ -274,12 +328,7 @@ RETURNING ...
 | One coupon per order         | `couponCode` is a single field            | `UNIQUE (redeemed_order_id)` on `coupons`                                                       |
 | An order has a coupon or not | —                                         | `CHECK ((coupon_code IS NULL) = (discount_percent IS NULL))`; `coupon_code` references a coupon |
 
-**Money and rounding:**
-
-- All amounts are integer cents. Discount = floor(subtotal × percent / 100), clamped to the subtotal; total = subtotal − discount. `discountCents` in `apps/api/src/shared/money.ts` computes the floor without floating point: it subtracts the remainder of subtotal × percent modulo 100 before dividing, so the division is exact.
-- **Rounding down** never over-discounts: the store gives at most x%, never a fraction of a cent more. 10% of 1999 is 199, so the total is 1800 (test 7).
-- **The clamp** cannot trigger while percent is at most 100 (checked on the coupon row), but it keeps "never negative" true by construction, and the order table's `CHECK (total_cents >= 0)` backs it.
-- **The discount applies to the whole subtotal.** There are no per-product or per-category coupons, so a line-by-line discount would only add rounding drift (floors of lines summing to less than the floor of the total).
+**Money:** discount = floor(subtotal × percent / 100), clamped to the subtotal, on the whole subtotal; see [Money and rounding](#money-and-rounding).
 
 **One coupon per order.** `couponCode` is a single optional string. Stacking would raise questions the brief does not answer (applied to the subtotal or to each other's result, in what order) and makes the discount depend on that order. One code per order keeps the discount a function of the subtotal and one percent.
 
@@ -316,6 +365,143 @@ RETURNING ...
 **Consequences:** The report costs a scan of `orders`, `order_lines` and `coupons` per request, which is negligible at assignment scale. At scale, the next step is a summary maintained by the same transaction or rebuilt from the orders, not ad hoc counters. In the SPA, every successful mutation marks the report, order and coupon queries stale (`apps/web/src/api/queryClient.ts`), so the admin views follow checkouts and coupon generation without each mutation knowing their keys.
 
 **Deferred: pagination.** Order and coupon lists return everything (SPEC.md, out of scope). When it is needed, keyset pagination on `(created_at, id)` fits the newest-first order and stays stable while orders are inserted; offset pagination would skip or repeat rows under concurrent checkouts. The report needs no pagination because it is already aggregated.
+
+## Transaction, concurrency and idempotency strategy
+
+The decisions above argue each piece; this is the strategy in one place.
+
+**One rule for every invariant:** the check and the write are the same statement, and a schema constraint stands behind it. "Is there enough stock?", "is the cart still open?", "is the coupon still unredeemed?" and "is this milestone reached and unrewarded?" are each a `WHERE` clause on the `UPDATE` or `INSERT` that acts on the answer. A statement that changes no row is the refusal. Nothing reads state in one step and writes based on it in a later one.
+
+**One transaction per checkout.** Claim the cart, load and price the lines, apply the price guard, take the stock in product-id order, redeem the coupon, insert the order and its snapshots, commit. Any typed error or defect rolls everything back, so there is no compensation code: a failed checkout leaves the cart `OPEN`, the stock untouched and the coupon available. Every other write (cart edits, product updates, coupon generation) is a single statement, which is its own transaction.
+
+**SQLite's serialization is a backstop, not the mechanism.** The SQLite client runs one connection and starts transactions with `BEGIN IMMEDIATE`, so transactions already run one at a time. The design is argued as if they did not: each guard is checked against Postgres under `READ COMMITTED`, where a conditional `UPDATE` waits for a competing row lock and then re-evaluates its `WHERE` against the committed row (see [Multiple instances and Postgres](#multiple-instances-and-postgres)).
+
+**What the race tests prove.** They fire genuinely concurrent HTTP requests as parallel fibers. They catch check-then-act across separate statements or transactions, the realistic bug, because fibers interleave between them. They cannot catch a read-then-write inside one transaction on this single-connection client; that case rests on the guard being in the statement. Mutation checks on the rollback, coupon-race and generation tests confirmed which of them fail when their guard is removed. The generation test does not, which is recorded in that decision rather than overstated.
+
+**Idempotency, endpoint by endpoint.** Every operation a client might retry has a defined outcome on the second attempt, without an idempotency-key store:
+
+| Operation                           | On retry                                                                                                | Why                                                                |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `PUT` cart item                     | Same state, same response                                                                               | Absolute quantity, not an increment                                |
+| `DELETE` cart item                  | Same state; removing an absent line is a no-op                                                          | Deleting is naturally idempotent                                   |
+| `POST` checkout                     | `200` with the original order (same coupon) or `409 CART_ALREADY_CHECKED_OUT` (different coupon)        | The cart is the key: conditional claim plus `UNIQUE (cart_id)`     |
+| `PATCH` admin product               | Same state                                                                                              | Absolute values, not deltas                                        |
+| `POST` coupon generation            | Issues the next eligible milestone, or `409 NO_ELIGIBLE_MILESTONE`; never two coupons for one milestone | Milestone computed in the insert, `UNIQUE (milestone_order_count)` |
+| `POST` cart                         | A second empty cart                                                                                     | Harmless: an empty cart holds nothing and costs one row            |
+| `GET` anything, the report included | No state change                                                                                         | Reads issue only `SELECT`s                                         |
+
+The checkout response distinguishes "placed now" (`201`) from "already placed" (`200`), so a client that lost the first response can tell what happened. The SPA never retries checkout automatically; its **Retry checkout** button makes the replay visible.
+
+## Money and rounding
+
+- **Integer cents everywhere.** Every amount is an integer number of cents in one implicit currency (USD), stored in `INTEGER` columns of `STRICT` tables and exposed as integer fields suffixed `Cents`. The `Cents` schema (`apps/api/src/shared/money.ts`) rejects fractional and negative values at the API edge with `400 VALIDATION_ERROR`. No floating-point value appears on a money path.
+- **Line total** = unit price × quantity. **Subtotal** = sum of line totals. **Discount** = floor(subtotal × percent / 100), clamped to the subtotal. **Total** = subtotal − discount.
+- **Rounding down** never over-discounts: the store gives at most x%, never a fraction of a cent more. 10% of 1999 is 199, so the total is 1800 (test 7 and the walkthrough). `discountCents` computes the floor without floating point: it subtracts the remainder of subtotal × percent modulo 100 before dividing, so the division is exact.
+- **The clamp** cannot trigger while percent is at most 100 (checked on the coupon row), but it keeps "never negative" true by construction, and `CHECK (total_cents >= 0)` backs it.
+- **The discount applies to the whole subtotal,** not line by line: with no per-product coupons, per-line floors would only add drift (floors of lines summing to less than the floor of the total).
+- **Deterministic:** the discount depends only on the subtotal and the coupon's snapshotted percent. The order stores `subtotalCents`, `discountPercent`, `discountCents` and `totalCents`, so anyone can recompute it, and the schema checks `total = subtotal − discount` on every row.
+- **Range:** amounts are JavaScript numbers, exact up to 2⁵³. Subtotal × percent stays exact for subtotals up to about 9 × 10¹³ cents. Nothing enforces an upper bound on prices today; see [the last section](#what-i-would-examine-first-with-two-more-hours).
+
+## Error model
+
+Every error body has the same shape:
+
+```json
+{
+  "code": "INSUFFICIENT_INVENTORY",
+  "message": "Not enough inventory for 1 product",
+  "details": { "lines": [{ "productId": 6, "requestedQuantity": 2, "availableInventory": 1 }] }
+}
+```
+
+- **`code`** is a stable literal a client can branch on. **`message`** is for humans and may change. **`details`** is structured and typed per code, so a client can act without parsing the message: the short lines and what is left, the new subtotal and repriced lines, the existing order id.
+- Each error class pins its code and HTTP status in its schema, and each endpoint declares which errors it can return. Both appear in the OpenAPI document, and handlers cannot return an undeclared error: it would not type-check.
+
+| Status | Meaning                                                                                                                                            | Codes                                                                                                                                      |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `400`  | The request does not match the endpoint's schema. Fix the request.                                                                                 | `VALIDATION_ERROR` (`details.location` is `path`, `query`, `headers` or `body`, plus `{ path, message }` issues)                           |
+| `404`  | The resource named in the URL does not exist.                                                                                                      | `CART_NOT_FOUND`, `ORDER_NOT_FOUND`, `PRODUCT_NOT_FOUND`                                                                                   |
+| `409`  | The request is valid, but conflicts with the current state. It might succeed once that state changes (fewer units, the new price, another coupon). | `INSUFFICIENT_INVENTORY`, `PRICE_CHANGED`, `CART_NOT_OPEN`, `CART_ALREADY_CHECKED_OUT`, `COUPON_ALREADY_REDEEMED`, `NO_ELIGIBLE_MILESTONE` |
+| `422`  | The request is well formed but cannot be processed as it stands; repeating it will not help.                                                       | `EMPTY_CART`, `COUPON_INVALID`                                                                                                             |
+| `500`  | A bug. Logged; the body is not part of the contract.                                                                                               | —                                                                                                                                          |
+
+Choices behind the table:
+
+- **Schema failures get a body.** Effect's default for a request that fails decoding is an empty `400`. One API-wide middleware turns it into `VALIDATION_ERROR` with the location and issues, and is declared on the API, so every endpoint documents it.
+- **`COUPON_INVALID` is `422`, not `404`.** The URL names the cart, which exists. The coupon is a body field, and an unknown code makes the request unprocessable, not the resource missing. An already-redeemed coupon is different: the code is real but its state conflicts, so `409 COUPON_ALREADY_REDEEMED`.
+- **`PRODUCT_NOT_FOUND` on `PUT /carts/{id}/items/{productId}` is a `404`,** because the product is in the URL.
+- **`INSUFFICIENT_INVENTORY` lists every short line,** not the first, so a client fixes the cart in one pass. The same error is used by the soft check on `PUT` and by checkout.
+- **Replay is a success, not an error.** A retried checkout returns `200` with the order; only a retry that asks for something different (another coupon) is `409 CART_ALREADY_CHECKED_OUT`, with the `orderId` so the client can still find what was placed.
+- **Failures inside our own response encoding stay `500`.** They are server bugs and must not be reported as a client's validation error.
+- **Precedence** follows the checkout steps: cart missing or checked out, then empty, then price guard, then stock, then coupon. The conflicts (checked out, stock, coupon) are detected by the guarded write itself, and follow-up reads only choose between messages (for example unknown versus already-redeemed coupon). An empty cart is found when the lines are loaded, and the price guard is a comparison inside the transaction before any stock moves.
+
+## Implemented versus deferred
+
+**Implemented:** every business requirement in the brief; every endpoint in the endpoint table; the invariants above, each with a guarded statement and a constraint; the replay and price-guard contract; lazy, race-safe coupon generation; redemption inside checkout; a report computed on read; the committed OpenAPI document with a drift test and served Scalar docs; executable request examples that CI runs; a test suite through the HTTP API, with race and retry tests; a small SPA, including the "Race it" demo and a manual checkout retry.
+
+**Deferred on purpose:**
+
+| Deferred                                                      | Why                                                                                   | How it would be added                                                                                                                                                                                        |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Authentication and authorization                              | Exercises none of the invariants; adds credentials to every request                   | Give the `AdminAuth` middleware a security scheme and a `401`, check the credential in `AdminAuthLive`. Bind carts to accounts if shoppers get accounts.                                                     |
+| Real payment                                                  | A charge cannot be rolled back with a database transaction                            | Commit the order `PENDING` with stock taken and an outbox row in the same transaction; a worker charges with the order id as the provider's idempotency key, then marks `PAID` or cancels and returns stock. |
+| Postgres and multiple instances                               | SQLite keeps setup to `pnpm install`                                                  | See the next section; the statements and constraints carry over.                                                                                                                                             |
+| Pagination of orders and coupons                              | Not needed at this scale                                                              | Keyset pagination on `(created_at, id)`, stable under concurrent inserts.                                                                                                                                    |
+| Cart expiry and cleanup                                       | Carts hold no stock, so an abandoned cart costs only rows                             | `updated_at` plus a periodic delete of old `OPEN` carts.                                                                                                                                                     |
+| Coupon expiry, per-customer coupons                           | No accounts; the brief gives no expiry                                                | A nullable `expires_at` (or `customer_id`) and one more condition on the redemption `UPDATE`.                                                                                                                |
+| Stock reservation at add-to-cart                              | Abandoned carts would block other shoppers indefinitely                               | Time-limited holds in a reservations table, released by expiry or checkout.                                                                                                                                  |
+| Runtime-configurable n                                        | Changing n today reinterprets future milestones and can stall generation (documented) | Compute the next milestone from the highest issued milestone instead of the coupon count.                                                                                                                    |
+| Rate limiting, observability beyond logs, multiple currencies | Outside the correctness questions the assignment asks                                 | A gateway for rate limits; Effect's OpenTelemetry integration for traces; a currency column with per-currency minor units.                                                                                   |
+| Frontend tests and runtime response validation in the SPA     | The SPA is a demo; the backend suite carries the guarantees                           | Playwright for the checkout and price-change flows; validate responses with schemas generated from the OpenAPI document.                                                                                     |
+
+## Multiple instances and Postgres
+
+The API process holds no state between requests: no caches, no in-memory locks, no counters. Every guarantee lives in the database, so more application instances behind a load balancer need no coordination with each other. The SQLite file is the one component that does not scale out, and moving to Postgres is the change.
+
+**What carries over unchanged.** Every guarded statement and every constraint is plain SQL that Postgres supports, including the deferred foreign key on `coupons.redeemed_order_id`. Under the default `READ COMMITTED` isolation:
+
+- **Stock:** two checkouts decrementing the last unit both run `UPDATE … WHERE available_inventory >= q`. The second blocks on the first's row lock, then re-evaluates the condition against the committed row and changes nothing. No oversell, no `SERIALIZABLE`, no retry loop, no `SELECT … FOR UPDATE`.
+- **Cart claim:** the same mechanism on `status = 'OPEN'`; `UNIQUE (cart_id)` behind it.
+- **Coupon redemption:** the same mechanism on `redeemed_order_id IS NULL`. If the first holder rolls back (say it was short on stock), the waiting checkout redeems the coupon, which is "never lost to a failed checkout" holding under contention.
+- **Coupon generation:** two concurrent inserts can compute the same milestone; the second blocks on the unique index entry and `ON CONFLICT DO NOTHING` turns it into "no row", which is the clean `NO_ELIGIBLE_MILESTONE` refusal.
+- **Report:** one statement reads one snapshot under `READ COMMITTED`, so it stays internally consistent without `REPEATABLE READ`.
+
+**What changes or needs care:**
+
+- **Lock ordering.** Checkout already decrements in product-id order, so two checkouts sharing products lock rows in the same order and queue rather than deadlock. Any new multi-row write must follow the same order.
+- **Milestones from `COUNT(orders)`, not sequences.** Postgres sequences skip values on rollback, and every failed checkout rolls back, so "the order with id 5n" may never exist. A count of committed orders has no gaps. At volume, `COUNT(*)` on every generation becomes a scan; a counter row updated in the checkout transaction would fix that, at the price of a hot row every checkout updates, so I would only add it when generation latency matters.
+- **Hot rows.** A popular product's row serializes its checkouts. That is the cost of exact stock. If one product dominates, split its stock into several bucket rows and decrement any bucket with enough units, or move to reservations.
+- **Connection pooling** (PgBouncer in transaction mode) works because each checkout is one short transaction with no network calls inside it. The payment call, when added, stays outside it (outbox).
+- **The driver swap** is a layer change: `@effect/sql-pg` instead of `@effect/sql-sqlite-node`. Repositories use the `SqlClient` interface, and migrations need dialect review (`STRICT` tables become typed columns; `RETURNING` and `ON CONFLICT` are already Postgres syntax).
+- **Tests** would run against a real Postgres (for example in a CI service container), so the race tests would finally exercise database-level concurrency rather than fiber interleaving.
+- **Reads at scale:** the report and lists can move to a read replica, accepting replica lag, or to a summary maintained in the checkout transaction.
+
+## AI usage
+
+I used Claude Code (Claude Opus) throughout, as a design partner and as the main code author, with every change reviewed, run and tested by me before it was committed.
+
+**How I worked with it:**
+
+1. **Design first.** I had it question me about the brief until the semantics were settled (carts, replay, coupons, money, errors), then write `SPEC.md` from that conversation. It then split the spec into ten tickets (`.scratch/checkout-rewards/issues/`), each with acceptance criteria.
+2. **One ticket at a time, test first.** For each ticket it wrote the HTTP-level tests, then the implementation, then this file's section for the ticket. Each ticket ended with a review pass against the spec and the repo's conventions, which produced the "Tidy … after review" commits.
+3. **Verifying, not trusting.** I ran mutation checks on the key tests: remove a guard or the transaction, confirm the test fails. This is how I learned that the coupon-generation race test passes even with the guard split into two statements and the unique constraint dropped, so its section says the guarantee rests on the single statement and the constraint, not on the test.
+
+**Where I corrected or redirected it:**
+
+- **`expectedTotal` → `expectedSubtotalCents`.** Its first design for the price guard had the client send the expected order total. I rejected that: the client would have to reimplement the discount rounding to know the total, and any change to the rounding rule would break clients. The client never computes discounts; it only knows the subtotal it showed. Since the discount is a deterministic function of the subtotal and the coupon, guarding the subtotal guards the total. The `Cents` suffix also makes the unit explicit.
+- **Idempotency-Key header rejected in favour of the cart as the key.** It proposed the standard pattern: a client-supplied `Idempotency-Key` header, a table of keys with request fingerprints and stored responses, and an expiry policy. I pushed back because a cart can produce at most one order, already enforced by the conditional claim and `UNIQUE (cart_id)`. The header would add a second key, storage and expiry rules to protect an invariant the schema already holds. The result is the replay-versus-conflict rule (same coupon replays, different coupon conflicts), and the replay decision records when a header _would_ become necessary.
+- **The report's transaction.** Its first report read the totals and the per-product rows as two `SELECT`s inside a transaction, for a consistent snapshot. In review I pointed out that the SQLite client starts every transaction with `BEGIN IMMEDIATE`, so a read-only report would take the write lock and block checkouts, and that on Postgres two statements need `REPEATABLE READ` to share a snapshot. It became one `SELECT`, consistent on both databases without a transaction.
+- **Smaller corrections in review:** the product update field renamed from `inventory` to `availableInventory`, so the request and response use one name; hash-based SPA routes replaced with TanStack Router; repeated test helpers and schemas pulled into one place.
+
+**What I own:** every line in the repository. I can explain each invariant and where it is enforced, predict the outcome of the concurrent scenarios in the walkthrough, and I have listed the weaknesses I know about below.
+
+## What I would examine first with two more hours
+
+1. **Run the suite against Postgres.** The race tests run on one SQLite connection, so they prove no database-level race. Adding a Postgres layer and running the oversell, retry, coupon and generation races against it, with real concurrent connections, would turn the `READ COMMITTED` arguments in this file from reasoning into evidence. This is the largest gap between what is claimed and what is tested.
+2. **Bound the money inputs.** Prices and quantities have no upper bound beyond the integer type, and subtotal × percent must stay below 2⁵³ to remain exact. I would cap `unitPriceCents` (and therefore subtotals) in the schema and the table, with a test at the limit.
+3. **Timing out a slow checkout.** A client that times out and retries while the first attempt is still running gets the replay only after the first commits; on SQLite the retry queues behind it. I would check what the client sees if the first attempt is still in flight for a long time, and whether a server-side timeout could commit after the client gave up (the replay covers it, but I would test it).
+4. **Changing n at runtime.** The documented stall (lowering n can make the next milestone collide with an issued one) is a real failure mode if n is ever changed. Computing the next milestone from `MAX(milestone_order_count)` fixes it; I would make that change with a test.
+5. **Coupon code collisions.** A 40-bit code collision fails generation with a `500` instead of retrying. It is negligible at this volume, but one retry on a primary-key conflict would remove it.
 
 ## Configuration
 

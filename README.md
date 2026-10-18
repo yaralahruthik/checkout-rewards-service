@@ -1,3 +1,141 @@
+# Checkout and Rewards Service
+
+A checkout backend that stays correct when requests are retried, shoppers race for the same stock, prices change mid-checkout, and two checkouts compete for one coupon. Every n-th successful order makes one x% coupon available.
+
+- **API:** TypeScript, [Effect 4](https://effect.website) HTTP API, SQLite through Node's built-in `node:sqlite`. Every invariant is enforced by a conditional write (checkout's all in one transaction) and backed by a schema constraint.
+- **Demo SPA:** React, Tailwind and shadcn, generated from the committed OpenAPI document. It drives the API; it is not part of the evaluation surface.
+
+| Document                                                               | What it holds                                                                                            |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| [`DECISIONS.md`](DECISIONS.md)                                         | Invariants, ambiguities, design decisions, concurrency, money, errors, deferrals, scale-out and AI usage |
+| [`apps/api/openapi.json`](apps/api/openapi.json)                       | The OpenAPI 3.1 contract, generated from code; CI fails if it drifts                                     |
+| [`apps/api/examples/walkthrough.ts`](apps/api/examples/walkthrough.ts) | Executable request examples, including retries, races and conflicts                                      |
+| [`SPEC.md`](SPEC.md)                                                   | The spec written before building                                                                         |
+| [`BRIEF.md`](BRIEF.md)                                                 | The assignment brief                                                                                     |
+
+## Setup
+
+**Prerequisites:** Node 24 (`.nvmrc`) and pnpm 11 (`corepack enable` picks up the pinned version). No database server, Docker or credentials.
+
+```sh
+pnpm install
+pnpm dev        # API on http://localhost:3000, SPA on http://localhost:5173
+```
+
+The API creates `apps/api/data/store.db` on first start, runs the migrations and seeds six products. The seed only runs into an empty catalog, so restarts keep your data.
+
+| Command                            | What it does                                                                              |
+| ---------------------------------- | ----------------------------------------------------------------------------------------- |
+| `pnpm dev`                         | API (restarts on change) and SPA together; the SPA proxies `/api` to the API              |
+| `pnpm --filter @uniblox/api start` | The API alone                                                                             |
+| `pnpm test`                        | The API test suite, each test on a fresh in-memory database                               |
+| `pnpm check`                       | Format, lint and type check                                                               |
+| `pnpm examples`                    | The request walkthrough against a running API (see [Request examples](#request-examples)) |
+| `pnpm db:reset`                    | Drops every table, re-runs the migrations and the seed. Stop the API first.               |
+| `pnpm openapi`                     | Regenerates `apps/api/openapi.json` after a contract change                               |
+
+### Environment variables
+
+All are optional. They are validated at startup, and an invalid value stops the API before it listens.
+
+| Variable                  | Default                  | Meaning                                                        |
+| ------------------------- | ------------------------ | -------------------------------------------------------------- |
+| `COUPON_EVERY_N_ORDERS`   | `5`                      | **n**: every n-th successful order is a coupon milestone (≥ 1) |
+| `COUPON_DISCOUNT_PERCENT` | `10`                     | **x**: the percent a generated coupon takes off (1–100)        |
+| `DATABASE_PATH`           | `apps/api/data/store.db` | SQLite file; `:memory:` for a throwaway database               |
+| `PORT`                    | `3000`                   | API port                                                       |
+| `API_PORT`                | `3000`                   | Where the SPA dev server proxies `/api`                        |
+| `API_URL`                 | `http://localhost:3000`  | Where `pnpm examples` sends requests                           |
+
+For example, `COUPON_EVERY_N_ORDERS=2 COUPON_DISCOUNT_PERCENT=25 pnpm dev`.
+
+### Seed data
+
+| Id  | Product                     | Price (cents) | Stock | Why                                        |
+| --- | --------------------------- | ------------- | ----- | ------------------------------------------ |
+| 1   | Mechanical Keyboard         | 8999          | 25    |                                            |
+| 2   | Wireless Mouse              | 2499          | 40    |                                            |
+| 3   | USB-C Hub                   | 3499          | 30    |                                            |
+| 4   | Laptop Stand                | 1999          | 20    | 10% off is 199.9 cents: exercises rounding |
+| 5   | Noise-Cancelling Headphones | 14999         | 15    |                                            |
+| 6   | Limited Edition Keycap Set  | 4999          | 3     | Limited stock: the oversell demo           |
+
+## API
+
+Interactive docs (Scalar) are served at **<http://localhost:3000/api/docs>**, and the OpenAPI document at `/api/openapi.json` (committed as [`apps/api/openapi.json`](apps/api/openapi.json)). All routes are under `/api`, and all money is integer cents.
+
+Every error body is `{ "code": "STABLE_CODE", "message": "…", "details": { … } }`. Any endpoint that takes a path parameter or a body can return `400 VALIDATION_ERROR`, with `details.location` and a list of `{ path, message }` issues. The full error model is in [`DECISIONS.md`](DECISIONS.md#error-model).
+
+### Shopper endpoints
+
+| Method   | Path                                | Purpose                                                                                 | Success                            | Errors                                                                                                                                                                                |
+| -------- | ----------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/products`                     | Catalog with current prices and stock                                                   | `200` products                     | —                                                                                                                                                                                     |
+| `POST`   | `/api/carts`                        | Create an empty cart; its UUIDv7 id is the only credential                              | `201` cart                         | —                                                                                                                                                                                     |
+| `GET`    | `/api/carts/{id}`                   | Cart priced at current prices, with per-line stock flags and `orderId` once checked out | `200` cart                         | `400`, `404 CART_NOT_FOUND`                                                                                                                                                           |
+| `PUT`    | `/api/carts/{id}/items/{productId}` | Set a line's quantity (`{ "quantity": 1–99 }`); replaces, never adds                    | `200` cart                         | `400`, `404 CART_NOT_FOUND`, `404 PRODUCT_NOT_FOUND`, `409 CART_NOT_OPEN`, `409 INSUFFICIENT_INVENTORY`                                                                               |
+| `DELETE` | `/api/carts/{id}/items/{productId}` | Remove a line; removing an absent line is a no-op                                       | `200` cart                         | `400`, `404 CART_NOT_FOUND`, `409 CART_NOT_OPEN`                                                                                                                                      |
+| `POST`   | `/api/carts/{id}/checkout`          | Place the order. Body (optional): `{ couponCode?, expectedSubtotalCents? }`             | `201` order, `200` order on replay | `400`, `404 CART_NOT_FOUND`, `409 CART_ALREADY_CHECKED_OUT`, `409 PRICE_CHANGED`, `409 INSUFFICIENT_INVENTORY`, `409 COUPON_ALREADY_REDEEMED`, `422 EMPTY_CART`, `422 COUPON_INVALID` |
+| `GET`    | `/api/orders/{id}`                  | An order with its line snapshots and discount breakdown                                 | `200` order                        | `400`, `404 ORDER_NOT_FOUND`                                                                                                                                                          |
+
+### Admin endpoints
+
+Administrative operations live under **`/api/admin`**. There is no authentication; one middleware (`apps/api/src/shared/admin.ts`) is the seam where it would go.
+
+| Method  | Path                          | Purpose                                                                                 | Success       | Errors                         |
+| ------- | ----------------------------- | --------------------------------------------------------------------------------------- | ------------- | ------------------------------ |
+| `PATCH` | `/api/admin/products/{id}`    | Set price and/or stock: `{ unitPriceCents?, availableInventory? }`, absolute values     | `200` product | `400`, `404 PRODUCT_NOT_FOUND` |
+| `POST`  | `/api/admin/coupons/generate` | Issue one coupon for the oldest milestone reached but not yet rewarded                  | `201` coupon  | `409 NO_ELIGIBLE_MILESTONE`    |
+| `GET`   | `/api/admin/coupons`          | Every coupon with `AVAILABLE`/`REDEEMED` status and the redeeming order                 | `200` coupons | —                              |
+| `GET`   | `/api/admin/orders`           | Every order with its lines, newest first                                                | `200` orders  | —                              |
+| `GET`   | `/api/admin/report`           | Quantity sold per product, gross, discounts, net, coupon counts, order count; read-only | `200` report  | —                              |
+
+### Behaviour worth knowing
+
+- **Checkout retries.** The cart is the idempotency key. Re-sending a checkout with the same coupon code (or none) returns the original order with `200` instead of `201`. A different coupon code gets `409 CART_ALREADY_CHECKED_OUT` with the `orderId`.
+- **Price changes.** Carts hold no prices; they always show current ones. Send the subtotal the shopper saw as `expectedSubtotalCents` and checkout refuses with `409 PRICE_CHANGED` (carrying the new totals) if it moved. Omit it to accept current prices.
+- **Failed checkouts change nothing.** The cart stays `OPEN`, no stock moves and the coupon stays available.
+- **Coupons** are bearer codes like `SAVE10-7KQ2M9XA`, redeemable once, one per order, discount = floor(subtotal × x / 100).
+
+## Request examples
+
+[`apps/api/examples/walkthrough.ts`](apps/api/examples/walkthrough.ts) is an executable walkthrough. With the API running:
+
+```sh
+pnpm examples
+```
+
+It prints every request and response, and checks each against the documented status and error code, exiting non-zero on any surprise. CI runs it against a freshly started API. In order, it covers:
+
+1. **Happy path:** build a cart, retry a `PUT` (the quantity is not doubled), remove a line, check out with the subtotal on screen, read the order.
+2. **Retried checkout:** the same checkout again returns `200` with the same order; then five concurrent checkouts of one cart give one `201`, four `200`s, one order and one stock decrement.
+3. **Conflicting checkout:** a different coupon on a checked-out cart is `409 CART_ALREADY_CHECKED_OUT`; editing it is `409 CART_NOT_OPEN`.
+4. **Price change:** an admin raises a price after the shopper viewed the cart; checkout is `409 PRICE_CHANGED`, the cart stays open, checkout at the new subtotal succeeds, and the order keeps that price after the catalog changes back.
+5. **Oversell:** five concurrent checkouts for the last two keycap sets give two `201`s, three `409 INSUFFICIENT_INVENTORY`, and stock 0.
+6. **Validation and not-found errors** for each error code not shown elsewhere.
+7. **Coupon generation:** drains any reached milestones, places orders up to the next one, then fires three concurrent generate requests: one `201`, two `409 NO_ELIGIBLE_MILESTONE`.
+8. **Redemption and double redemption:** two concurrent checkouts with that coupon give one `201` (199 cents off 1999 at the default x = 10) and one `409 COUPON_ALREADY_REDEEMED` whose cart is still open.
+9. **Report:** two reads are identical, and every figure is re-derived from the order and coupon lists.
+
+It can be run repeatedly against the same database: when earlier runs have sold a product it needs too low, it restocks it through the admin update, and when it completes it has put back the prices and the keycap stock it changed. Its orders and coupons are real, so they stay in the report. If a run fails part-way, `pnpm db:reset` (with the API stopped) restores the seeded state.
+
+## Tests
+
+`pnpm test` runs the suite in `apps/api/src/**/*.test.ts`. Every test goes through the real HTTP handlers against a fresh, migrated and seeded in-memory database, and asserts only on responses and follow-up API reads. The ones that matter most:
+
+| Test                                                   | Risk it covers                                                                    |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| Oversell race (`checkout.test.ts`)                     | Ten parallel checkouts for stock 3: exactly 3 succeed, stock ends at 0            |
+| Retry storm (`checkout.test.ts`)                       | Ten parallel checkouts of one cart: one order, one decrement, same order id       |
+| Coupon race (`checkout.test.ts`)                       | Two checkouts with one coupon: one redeems, the loser's cart and stock untouched  |
+| Coupon survives a failed checkout (`checkout.test.ts`) | A checkout failing on stock leaves its coupon available                           |
+| Generation race (`coupons.test.ts`)                    | Five parallel generate requests at one milestone issue one coupon                 |
+| Report reconciliation (`report.test.ts`)               | The report equals sums over the listed orders and coupons, and never changes them |
+| Price change, snapshot, rounding (`checkout.test.ts`)  | Stale subtotal refused; snapshots survive catalog changes; 1999 × 10% → 199       |
+| OpenAPI drift (`openapi.test.ts`)                      | The committed contract matches the code                                           |
+
+[`DECISIONS.md`](DECISIONS.md) explains what the race tests can and cannot prove on a single SQLite connection.
+
 ## Demo: "Race it"
 
 The admin page (`/admin` in the SPA, started with `pnpm dev`) has a **Race it** panel that shows the no-oversell guarantee holding live:
@@ -8,189 +146,27 @@ The admin page (`/admin` in the SPA, started with `pnpm dev`) has a **Race it** 
 
 The panel uses only the public and admin API endpoints. The race's orders are real: they appear in the order list and the report, and they count towards coupon milestones. A browser opens only about six HTTP/1.1 connections per origin, so not all checkouts overlap at once. It is a demonstration, not a test. The oversell race test in the API suite guards the invariant.
 
-#Full-Stack Engineer
+The rest of the SPA: the catalog (`/`) adds to a cart remembered in local storage; the cart page (`/cart`) edits quantities, takes a coupon and asks you to confirm when prices changed; the order page has a **Retry checkout** button that shows the replay; the admin page also edits products, generates and lists coupons, lists orders and shows the report.
 
-## Build a Reliable Checkout and Rewards Service
+## Time spent and status
 
-You are building the backend for an ecommerce store. Customers create carts, add products, and check out. The store rewards purchasing activity by making a discount coupon available after every *n*th successfully placed order.
+About **4 hours**: roughly 1½ hours on design (the spec, the invariants and the ticket breakdown) and the rest building, testing and documenting, in the increments the commit history shows.
 
-The basic endpoints are straightforward. The challenge is making the system behave predictably when requests are retried, multiple customers check out concurrently, inventory changes, or two operations compete for the same coupon.
+Everything in [`SPEC.md`](SPEC.md) is implemented; nothing in scope is unfinished. What was deliberately left out (authentication, real payments, Postgres and multiple instances, pagination, cart expiry, frontend tests) is listed in [`DECISIONS.md`](DECISIONS.md#implemented-versus-deferred) with how each would be added.
 
-We are evaluating how you reason about those situations—not how quickly you can generate CRUD code.
+## Repository layout
 
-## Timebox
-
-Please spend **no more than 4–6 hours** on the assignment.
-
-We do not expect every production concern to be implemented. Prioritize the risks you consider most important, implement a coherent solution, and document what you intentionally deferred in `DECISIONS.md`.
-
-## Business Requirements
-
-### Products and inventory
-
-- A product has an ID, name, current unit price, and available inventory.
-- Seed at least five products. Include at least one product with limited inventory.
-- A cart may contain multiple products and quantities.
-- Invalid products or quantities must not silently enter a cart.
-- The system must not sell more inventory than is available.
-
-### Carts
-
-- A client can create a cart, add an item, change its quantity, remove an item, and view the cart.
-- Return useful prices and totals when viewing a cart.
-- A cart must not be checked out more than once.
-- Decide and document what happens when product price or availability changes after an item was added but before checkout.
-
-### Checkout and orders
-
-- Checkout validates the cart and, if successful, creates an order.
-- Clients may retry a checkout request because they timed out or did not receive the response. A retry must not accidentally create another order or charge inventory twice.
-- Concurrent checkout attempts must not oversell inventory.
-- An order must retain enough information to explain what the customer purchased and how its total was calculated, even if product data later changes.
-- Calculate money without floating-point rounding errors.
-- Return errors that are distinguishable and useful to an API client.
-
-No real payment integration is required. Treat successful checkout as payment success, or introduce a small payment abstraction/fake if it supports your design. Explain the choice.
-
-### Discount coupons
-
-- Configure the system with values `n` and `x`. For example, when `n = 5` and `x = 10`, every fifth successfully placed order makes one coupon for 10% off available.
-- An administrator can request coupon generation.
-- A coupon is generated only if the configured order milestone has been reached and a coupon has not already been generated for that milestone.
-- A valid coupon may be supplied at checkout.
-- A coupon can be redeemed only once.
-- A coupon must not be lost or consumed by a checkout that ultimately fails.
-- A coupon must not be redeemed successfully by two concurrent checkouts.
-- Discount calculations must be deterministic and must never make an order total negative.
-
-You will need to decide some coupon semantics that are not specified here. Make defensible choices and record them.
-
-### Administration and reporting
-
-Provide administrator operations to:
-
-1. Generate a coupon when an unrewarded milestone is eligible.
-2. Return a summary containing:
-   - successfully purchased quantity by product;
-   - gross revenue before discounts;
-   - total discounts granted;
-   - net revenue;
-   - coupons generated, available, and redeemed; and
-   - total successfully placed orders.
-
-The report should reconcile with the orders and coupons returned by your system. Repeated report requests must not mutate state.
-
-## API Design
-
-Design the HTTP API you believe best represents the domain. At minimum, it must support:
-
-- cart creation and retrieval;
-- adding, updating, and removing cart items;
-- checkout with an optional coupon;
-- retrieving an order;
-- administrator coupon generation; and
-- administrator reporting.
-
-Document each endpoint, request, response, expected status code, and important error case. You may provide an OpenAPI document, an API client collection, executable examples, or clear README documentation.
-
-Authentication and authorization do not need to be implemented. Clearly identify which operations you treat as administrative.
-
-## Persistence and Concurrency
-
-You may use a database, an embedded database, or an in-memory implementation.
-
-An in-memory implementation is acceptable only if it still demonstrates how you preserve the required invariants when requests overlap. Explain how the design would change with multiple application instances and a production database.
-
-We may exercise the service with concurrent requests and repeated requests. Tests that only call each endpoint once in a happy-path sequence will not be sufficient.
-
-## Required Deliverables
-
-### 1. Working service
-
-- Source code in the stack of your choice
-- Repeatable setup and run instructions
-- Seed data or migrations required to evaluate the service
-- No dependency on private services or credentials
-
-### 2. Automated tests
-
-Include focused tests for the business rules and failure modes you consider most important. We value a small number of meaningful tests over high superficial coverage.
-
-At least one test must exercise competing or repeated operations—not merely sequential happy paths.
-
-### 3. `DECISIONS.md`
-
-This is a required and heavily weighted part of the submission. Include:
-
-- the system invariants you identified;
-- ambiguities you found and the semantics you selected;
-- at least five material design decisions and alternatives considered;
-- your transaction, concurrency, and idempotency strategy;
-- money and rounding rules;
-- error-model choices;
-- what you implemented versus intentionally deferred;
-- how the design would evolve for multiple service instances and production scale;
-- how you used AI tools, including an example where you corrected, rejected, or materially redirected AI output; and
-- what you would examine first if given another two hours.
-
-For each material decision, a useful structure is:
-
-```markdown
-## Decision: [Title]
-
-**Context:** What correctness or design problem were you solving?
-
-**Options considered:** What credible alternatives did you consider?
-
-**Choice:** What did you choose?
-
-**Why:** What trade-offs, constraints, or failure modes drove the decision?
-
-**Consequences:** What becomes easier, harder, or deferred as a result?
 ```
-
-### 4. Repository history
-
-Commit your work in meaningful increments. We do not grade the number of commits, but the history should help us understand how the solution developed.
-
-## AI Use
-
-You are encouraged to use ChatGPT, Codex, Claude, Copilot, or other AI tools. Using AI is not a shortcut we penalize; using generated code without validating its behavior is.
-
-You are responsible for every line submitted. In the follow-up discussion, we may ask you to:
-
-- explain an invariant and show where it is enforced;
-- predict behavior under a concurrent or repeated request;
-- identify a weakness in your implementation;
-- change one business rule; or
-- debug a failing scenario with us.
-
-Do not include private AI transcripts. A concise account of how AI affected your approach belongs in `DECISIONS.md`.
-
-## Evaluation
-
-We will evaluate:
-
-1. **Correctness and invariants** — orders, inventory, coupons, and reporting remain consistent.
-2. **Reasoning and judgment** — ambiguities and trade-offs are recognized and resolved deliberately.
-3. **Failure behavior** — retries, conflicts, validation failures, and concurrent operations have coherent outcomes.
-4. **Domain and API design** — responsibilities, state transitions, and error contracts are understandable.
-5. **Testing** — tests target meaningful risks and can expose incorrect implementations.
-6. **Code quality** — the implementation is focused, readable, and proportionate to the timebox.
-7. **Ownership of AI-assisted work** — the candidate can critique, explain, and modify what they submitted.
-
-Frontend work is optional and will not compensate for an unreliable backend. If you add a frontend, keep it small and use it to demonstrate the backend behavior.
-
-## Submission
-
-Share a public or access-granted Git repository containing:
-
-- source code;
-- setup and run instructions;
-- API documentation or executable examples;
-- automated tests; and
-- `DECISIONS.md`.
-
-State the approximate time spent. If something is incomplete, tell us directly and explain how you would finish it.
-
-Good luck—we are looking forward to discussing your reasoning.
+apps/api/                 Effect HTTP API
+  src/Api.ts              API definition: the source of the OpenAPI document
+  src/features/<feature>/ products, carts, checkout, orders, coupons, report:
+                          endpoint schemas (*Api.ts), handlers (*.http.ts),
+                          service, repository, tests
+  src/shared/             config, error shape, admin seam, money, ids, database,
+                          migrations, seed
+  src/scripts/            OpenAPI generation, database reset
+  src/testing/            test layer and shopper helpers
+  examples/walkthrough.ts executable request examples
+apps/web/                 demo SPA (catalog, cart, orders, admin)
+packages/tsconfig/        shared compiler settings
+```

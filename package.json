@@ -9,7 +9,8 @@
     "test": "vp test",
     "build": "vp run -r build",
     "openapi": "vp run --filter @uniblox/api openapi",
-    "db:reset": "vp run --filter @uniblox/api db:reset"
+    "db:reset": "vp run --filter @uniblox/api db:reset",
+    "examples": "vp run --filter @uniblox/api examples"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
