@@ -1,0 +1,34 @@
+apps/web/src/features/admin/RacePanel.tsx
+  s_3623433539574b::t_6b3cbe7e0a51ec 104-105
+  s_3623433539574b::t_227b03b5671076 124-125,128
+  s_3623433539574b::t_d74137b9172ebb 45
+  s_3623433539574b::t_1666ffe16f6d52 71-72,74-80
+  s_3623433539574b::t_7bb737a4ba72a0 1-44,46-53,55-70,73,81-103,106-123,126-127,129-181
+  s_3623433539574b::t_d2c2e146dc8c47 54
+  s_3623433539574b::t_09c5ef8a6f8745 182-183
+apps/web/src/features/admin/Figure.tsx
+  s_3623433539574b::t_26b09538479583 1-9
+apps/web/src/features/admin/ReportPanel.tsx
+  s_3623433539574b::t_569366418417ad 4
+apps/web/src/features/admin/AdminPage.tsx
+  s_3623433539574b::t_51232fb6755aa3 6,31-32
+  s_3623433539574b::t_a3c3a69a6b1c3f 33
+README.md
+  s_3623433539574b::t_9eb0392f2d58ac 1-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03a4c054cc8340180b0495b2aee59ed9f7857051",
+  "prompts": {},
+  "sessions": {
+    "s_3623433539574b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5187da1-f022-4a14-b92f-5cb6c345f8fc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "yaralahruthik <yaralahruthikreddy@gmail.com>"
+    }
+  }
+}
