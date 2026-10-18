@@ -4,7 +4,7 @@
 
 **Blocked by:** 01–09
 
-**Status:** done (CI pending push)
+**Status:** done
 
 - [x] README covers prerequisites (Node 24, pnpm), install, run, test, reset-db, and environment variables (`n`, `x`, database path)
 - [x] README has an endpoint table with method, path, purpose, success status and error codes, with admin endpoints clearly marked
@@ -23,4 +23,4 @@
   - [x] AI usage, with a concrete example of redirected output (e.g. `expectedTotal` changed to `expectedSubtotalCents`, and the Idempotency-Key header rejected in favour of cart-as-key)
   - [x] what to examine first given another two hours
 - [x] The commit history reads as meaningful increments
-- [ ] CI is green on the final commit
+- [x] CI is green on the final commit
