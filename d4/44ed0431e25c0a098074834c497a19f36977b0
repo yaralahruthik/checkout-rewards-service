@@ -1,0 +1,78 @@
+apps/api/src/features/products/ProductsApi.ts
+  s_67c6a62632ded6::t_6e34845c6356f8 3-4,11-12,17,21-34,47-65
+apps/web/src/components/ui/button.tsx
+  s_67c6a62632ded6::t_d6780e749a69f5 1-4,40-41,51,53,63,66
+  s_f4c8861931ba37::t_6a10a37e321ec6 5-39,42-50,52,54-62,64-65
+apps/api/src/Api.ts
+  s_67c6a62632ded6::t_7468f428f0f215 2,11
+apps/api/src/features/products/products.test.ts
+  s_67c6a62632ded6::t_d6780e749a69f5 22-28,30-37,39-42,45-55,57-65,67-75
+  s_67c6a62632ded6::t_60236f81ecaa74 43,77-91
+  s_67c6a62632ded6::t_399689efe6dfd3 3,21,29,38
+  s_67c6a62632ded6::t_4fddbd9165ebbd 44,56,66,76
+apps/api/src/shared/admin.ts
+  s_67c6a62632ded6::t_c1d48283690b51 2,7-12
+  s_67c6a62632ded6::t_d465992668a58d 1,3-6,13-16
+apps/web/src/components/ui/input.tsx
+  s_67c6a62632ded6::t_d6780e749a69f5 1-2,11,15,18
+  s_67c6a62632ded6::t_b63f0a2ba7d17e 3-10,12-14,16-17
+apps/web/src/features/admin/ProductEditor.tsx
+  s_67c6a62632ded6::t_8d5bee4da498c8 1-4,6-28,31-41,43-81,83-105
+  s_67c6a62632ded6::t_30bdbb977f2191 5,29-30,82
+  s_67c6a62632ded6::t_01ef105ebcc759 42
+apps/web/src/App.tsx
+  s_67c6a62632ded6::t_30bdbb977f2191 1-44
+apps/web/src/features/admin/AdminPage.tsx
+  s_67c6a62632ded6::t_30bdbb977f2191 1-20
+apps/web/src/components/ui/label.tsx
+  s_67c6a62632ded6::t_d6780e749a69f5 1-3,5,11,15,18
+  s_67c6a62632ded6::t_b63f0a2ba7d17e 4,6-10,12-14,16-17
+apps/api/openapi.json
+  s_67c6a62632ded6::t_71fe307d61fc04 45-107,182-215,252-270,279-281
+.scratch/checkout-rewards/issues/02-admin-product-updates.md
+  s_67c6a62632ded6::t_ae0c0a0d2aab8c 7,9-16
+apps/api/src/http.ts
+  s_67c6a62632ded6::t_7468f428f0f215 4-5,15-17
+apps/api/src/features/products/ProductRepository.ts
+  s_67c6a62632ded6::t_d6780e749a69f5 44-53
+  s_67c6a62632ded6::t_ec4f861d442d8d 1,3,9-13,27-43,54-55
+DECISIONS.md
+  s_67c6a62632ded6::t_a68a691fb16006 89-109
+apps/web/src/main.tsx
+  s_67c6a62632ded6::t_30bdbb977f2191 4,12
+apps/api/src/features/products/products.http.ts
+  s_67c6a62632ded6::t_c697b5e14b670d 1,4,15-36
+  s_7e3cad2b45f7e4::t_3de01a1f15bb95 37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d444ed0431e25c0a098074834c497a19f36977b0",
+  "prompts": {},
+  "sessions": {
+    "s_67c6a62632ded6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0fbdae51-0650-4517-a994-64fc5a0b24b8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "yaralahruthik <yaralahruthikreddy@gmail.com>"
+    },
+    "s_7e3cad2b45f7e4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4c14de06-1d64-45bc-9f0b-8ce697f9eb24",
+        "model": "unknown"
+      },
+      "human_author": "yaralahruthik <yaralahruthikreddy@gmail.com>"
+    },
+    "s_f4c8861931ba37": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5b14de58-ab05-4b9f-b79b-2f8df60066c7",
+        "model": "unknown"
+      },
+      "human_author": "yaralahruthik <yaralahruthikreddy@gmail.com>"
+    }
+  }
+}
