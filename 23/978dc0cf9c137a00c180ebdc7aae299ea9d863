@@ -1,0 +1,28 @@
+apps/api/src/features/carts/carts.test.ts
+  s_bb499f4ae460bb::t_b52f41ba43d933 181
+apps/api/src/features/products/ProductRepository.ts
+  s_bb499f4ae460bb::t_39ef4f356f5fa7 80-82
+apps/api/src/features/checkout/checkout.test.ts
+  s_bb499f4ae460bb::t_39ef4f356f5fa7 19-23,89,252,397
+  s_bb499f4ae460bb::t_b52f41ba43d933 272
+apps/api/src/features/coupons/coupons.test.ts
+  s_bb499f4ae460bb::t_cb83677dc64625 62-99
+  s_bb499f4ae460bb::t_39ef4f356f5fa7 18-20,35
+  s_bb499f4ae460bb::t_157e8f251fdab4 100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "23978dc0cf9c137a00c180ebdc7aae299ea9d863",
+  "prompts": {},
+  "sessions": {
+    "s_bb499f4ae460bb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51a06a6c-2f18-4ee1-8d71-94c7a0b5cf0b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "yaralahruthik <yaralahruthikreddy@gmail.com>"
+    }
+  }
+}
