@@ -1,0 +1,58 @@
+apps/api/src/features/orders/orders.test.ts
+  s_0c1279600d5205::t_a0b660be6bf5bd 1-47
+apps/api/src/features/report/ReportApi.ts
+  s_0c1279600d5205::t_53b5d839970132 1-56
+apps/api/src/features/report/ReportService.ts
+  s_0c1279600d5205::t_53b5d839970132 1-19
+apps/api/src/Api.ts
+  s_0c1279600d5205::t_53b5d839970132 7,22
+  s_0c1279600d5205::t_39d2b163062bcb 5,21
+apps/web/src/features/admin/OrdersPanel.tsx
+  s_0c1279600d5205::t_1441d955bced4b 1-43
+apps/api/src/features/report/report.test.ts
+  s_0c1279600d5205::t_1c8e7766b51bfd 1-27,30-37,49-69,73-75,77-166
+  s_0c1279600d5205::t_3f9bf444369dc8 28-29,38-48,70-72,76
+apps/web/src/features/admin/CouponsPanel.tsx
+  s_0c1279600d5205::t_1441d955bced4b 2,59,61-64
+apps/api/src/http.ts
+  s_0c1279600d5205::t_53b5d839970132 9,26
+apps/web/src/features/admin/AdminPage.tsx
+  s_0c1279600d5205::t_1441d955bced4b 3,5,14-21,38-45
+apps/api/src/features/orders/OrderService.ts
+  s_0c1279600d5205::t_39d2b163062bcb 9,25
+apps/api/src/features/report/report.http.ts
+  s_0c1279600d5205::t_53b5d839970132 1-15
+DECISIONS.md
+  s_0c1279600d5205::t_1d54849a93ac3f 292-317
+apps/api/src/features/orders/OrdersApi.ts
+  s_0c1279600d5205::t_39d2b163062bcb 3,70-85
+apps/api/src/features/orders/orders.http.ts
+  s_0c1279600d5205::t_39d2b163062bcb 15-26
+apps/api/openapi.json
+  s_0c1279600d5205::t_2acc5478096b2f 613-683,758-971,1787-1792
+.scratch/checkout-rewards/issues/08-admin-report-and-order-list.md
+  s_0c1279600d5205::t_83a113337d67cd 7,9-21
+apps/api/src/features/orders/OrderRepository.ts
+  s_0c1279600d5205::t_39d2b163062bcb 1,17-18,59-85,87-90
+  s_0c1279600d5205::t_4f145fa8a20895 86
+apps/api/src/features/report/ReportRepository.ts
+  s_0c1279600d5205::t_53b5d839970132 1-75
+apps/web/src/features/admin/ReportPanel.tsx
+  s_0c1279600d5205::t_1441d955bced4b 1-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "37fa34ae0f8400ddec8cb20b3f7b13d0617fa9ba",
+  "prompts": {},
+  "sessions": {
+    "s_0c1279600d5205": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38441d62-7424-4c9c-9a3b-54066692d489",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "yaralahruthik <yaralahruthikreddy@gmail.com>"
+    }
+  }
+}
