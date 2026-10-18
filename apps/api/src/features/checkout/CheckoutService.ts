@@ -1,7 +1,7 @@
 import { Context, DateTime, Effect, Layer, Option } from "effect";
 import { SqlClient } from "effect/sql";
 import { Ids } from "../../shared/ids.ts";
-import { discountCents, lineTotalCents, subtotalCents } from "../../shared/money.ts";
+import { discountCents, priceLines } from "../../shared/money.ts";
 import { CartId, CartNotFound, cartNotFound } from "../carts/CartsApi.ts";
 import { CartRepository } from "../carts/CartRepository.ts";
 import { CouponRepository } from "../coupons/CouponRepository.ts";
@@ -91,14 +91,14 @@ export class CheckoutService extends Context.Service<
         }
 
         // 3. Price them at current prices.
-        const lines = cartLines.map((line) => ({
-          productId: line.productId,
-          productName: line.productName,
-          unitPriceCents: line.unitPriceCents,
-          quantity: line.quantity,
-          lineTotalCents: lineTotalCents(line.unitPriceCents, line.quantity),
-        }));
-        const subtotal = subtotalCents(lines);
+        const { lines, subtotalCents: subtotal } = priceLines(
+          cartLines.map((line) => ({
+            productId: line.productId,
+            productName: line.productName,
+            unitPriceCents: line.unitPriceCents,
+            quantity: line.quantity,
+          })),
+        );
 
         // 4. Refuse a subtotal the shopper did not see.
         const { expectedSubtotalCents } = request;

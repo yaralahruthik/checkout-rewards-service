@@ -10,13 +10,29 @@ export const Cents = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).annotate
   description: "An amount of money in integer cents (USD).",
 });
 
-/** Unit price × quantity. Both are integers, so the product is exact. */
-export const lineTotalCents = (unitPriceCents: number, quantity: number): number =>
-  unitPriceCents * quantity;
-
-/** The sum of the line totals. */
-export const subtotalCents = (lines: ReadonlyArray<{ readonly lineTotalCents: number }>): number =>
-  lines.reduce((sum, line) => sum + line.lineTotalCents, 0);
+/**
+ * Prices lines at the unit prices they carry: each line total is unit price ×
+ * quantity, and the subtotal is their sum. All integers, so both are exact.
+ * The cart view and checkout both price through here, so the subtotal a
+ * shopper saw and the one the price guard compares are computed the same way.
+ */
+export const priceLines = <
+  L extends { readonly unitPriceCents: number; readonly quantity: number },
+>(
+  lines: ReadonlyArray<L>,
+): {
+  readonly lines: ReadonlyArray<L & { readonly lineTotalCents: number }>;
+  readonly subtotalCents: number;
+} => {
+  const priced = lines.map((line) => ({
+    ...line,
+    lineTotalCents: line.unitPriceCents * line.quantity,
+  }));
+  return {
+    lines: priced,
+    subtotalCents: priced.reduce((sum, line) => sum + line.lineTotalCents, 0),
+  };
+};
 
 /**
  * floor(subtotal × percent / 100), clamped to the subtotal so the total is
