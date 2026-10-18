@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import { Effect } from "effect";
 import { HttpBody, HttpClient } from "effect/http";
+import { cartWith, checkout } from "../../testing/shop.ts";
 import { TestApi } from "../../testing/TestApi.ts";
 
 /** The order response body, typed for reading fields in assertions. */
@@ -16,28 +17,6 @@ type OrderBody = {
 };
 
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-
-/** A new cart holding the given `[productId, quantity]` lines. */
-const cartWith = (...lines: ReadonlyArray<readonly [number, number]>) =>
-  Effect.gen(function* () {
-    const cart = yield* HttpClient.post("/api/carts").pipe(Effect.flatMap((r) => r.json));
-    const cartId = (cart as { id: string }).id;
-    for (const [productId, quantity] of lines) {
-      yield* HttpClient.put(`/api/carts/${cartId}/items/${productId}`, {
-        body: HttpBody.jsonUnsafe({ quantity }),
-      });
-    }
-    return cartId;
-  });
-
-const checkout = (
-  cartId: string,
-  request?: { readonly couponCode?: string; readonly expectedSubtotalCents?: number },
-) =>
-  HttpClient.post(
-    `/api/carts/${cartId}/checkout`,
-    request === undefined ? {} : { body: HttpBody.jsonUnsafe(request) },
-  );
 
 /** The cart view, typed for reading fields in assertions. */
 const cartOf = (cartId: string) =>

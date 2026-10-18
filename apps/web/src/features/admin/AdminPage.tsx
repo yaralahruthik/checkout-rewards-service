@@ -1,8 +1,18 @@
+import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CouponsPanel } from "./CouponsPanel";
 import { OrdersPanel } from "./OrdersPanel";
 import { ProductEditor } from "./ProductEditor";
 import { ReportPanel } from "./ReportPanel";
+
+const Section = ({ title, children }: { readonly title: string; readonly children: ReactNode }) => (
+  <Card>
+    <CardHeader>
+      <CardTitle>{title}</CardTitle>
+    </CardHeader>
+    <CardContent>{children}</CardContent>
+  </Card>
+);
 
 /**
  * Administrative operations. The API serves them under `/api/admin` with no
@@ -11,37 +21,17 @@ import { ReportPanel } from "./ReportPanel";
 export const AdminPage = () => (
   <main className="mx-auto grid max-w-5xl gap-6 p-6">
     <h1 className="text-2xl font-semibold">Admin</h1>
-    <Card>
-      <CardHeader>
-        <CardTitle>Report</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ReportPanel />
-      </CardContent>
-    </Card>
-    <Card>
-      <CardHeader>
-        <CardTitle>Products</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ProductEditor />
-      </CardContent>
-    </Card>
-    <Card>
-      <CardHeader>
-        <CardTitle>Coupons</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <CouponsPanel />
-      </CardContent>
-    </Card>
-    <Card>
-      <CardHeader>
-        <CardTitle>Orders</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <OrdersPanel />
-      </CardContent>
-    </Card>
+    <Section title="Report">
+      <ReportPanel />
+    </Section>
+    <Section title="Products">
+      <ProductEditor />
+    </Section>
+    <Section title="Coupons">
+      <CouponsPanel />
+    </Section>
+    <Section title="Orders">
+      <OrdersPanel />
+    </Section>
   </main>
 );

@@ -1,5 +1,4 @@
 import { useAdminReportGetReport } from "@/api/generated/admin-report/admin-report";
-import { useProductsListProducts } from "@/api/generated/products/products";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCents } from "@/lib/money";
 
@@ -13,8 +12,6 @@ const Figure = ({ label, value }: { readonly label: string; readonly value: stri
 /** The read-only report. The API computes it on every request, so refetching is free. */
 export const ReportPanel = () => {
   const report = useAdminReportGetReport();
-  // Product names for the labels; the report itself carries only ids.
-  const products = useProductsListProducts();
 
   if (report.isError) {
     return <p className="text-destructive">Could not load the report: {report.error.message}</p>;
@@ -23,8 +20,6 @@ export const ReportPanel = () => {
     return <Skeleton className="h-40" />;
   }
   const { coupons } = report.data;
-  const nameOf = (productId: number) =>
-    products.data?.find((product) => product.id === productId)?.name ?? `Product ${productId}`;
 
   return (
     <div className="grid gap-4">
@@ -47,7 +42,7 @@ export const ReportPanel = () => {
               key={sales.productId}
               className="flex justify-between border-b py-2 text-sm last:border-b-0"
             >
-              <span>{nameOf(sales.productId)}</span>
+              <span>{sales.productName}</span>
               <span className="tabular-nums">{sales.purchasedQuantity} sold</span>
             </li>
           ))}

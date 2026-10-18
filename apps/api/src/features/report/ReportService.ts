@@ -13,7 +13,7 @@ export class ReportService extends Context.Service<
     ReportService,
     Effect.gen(function* () {
       const repository = yield* ReportRepository;
-      return ReportService.of({ get: repository.read });
+      return ReportService.of({ get: repository.get });
     }),
   ).pipe(Layer.provide(ReportRepository.layer));
 }

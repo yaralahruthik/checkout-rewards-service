@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
 import { AdminAuth } from "../../shared/admin.ts";
+import { Count } from "../../shared/count.ts";
 import { errorFields } from "../../shared/errors.ts";
 import { DiscountPercent } from "../../shared/money.ts";
 import { OrderId } from "../orders/OrdersApi.ts";
@@ -15,8 +16,6 @@ export const CouponStatus = Schema.Literals(["AVAILABLE", "REDEEMED"]).annotate(
   identifier: "CouponStatus",
 });
 export type CouponStatus = typeof CouponStatus.Type;
-
-const OrderCount = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
 export const Coupon = Schema.Struct({
   code: CouponCode,
@@ -42,7 +41,7 @@ export type Coupon = typeof Coupon.Type;
 export class NoEligibleMilestone extends Schema.Error<NoEligibleMilestone>("NoEligibleMilestone")(
   errorFields(
     "NO_ELIGIBLE_MILESTONE",
-    Schema.Struct({ orderCount: OrderCount, nextMilestoneOrderCount: OrderCount }),
+    Schema.Struct({ orderCount: Count, nextMilestoneOrderCount: Count }),
   ),
   {
     httpApiStatus: 409,

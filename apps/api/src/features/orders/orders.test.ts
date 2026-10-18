@@ -1,22 +1,8 @@
 import { assert, it } from "@effect/vitest";
 import { Effect } from "effect";
-import { HttpBody, HttpClient } from "effect/http";
+import { HttpClient } from "effect/http";
+import { placeOrder } from "../../testing/shop.ts";
 import { TestApi } from "../../testing/TestApi.ts";
-
-/** Places an order from a new cart holding the given `[productId, quantity]` lines. */
-const placeOrder = (...lines: ReadonlyArray<readonly [number, number]>) =>
-  Effect.gen(function* () {
-    const cart = yield* HttpClient.post("/api/carts").pipe(Effect.flatMap((r) => r.json));
-    const cartId = (cart as { id: string }).id;
-    for (const [productId, quantity] of lines) {
-      yield* HttpClient.put(`/api/carts/${cartId}/items/${productId}`, {
-        body: HttpBody.jsonUnsafe({ quantity }),
-      });
-    }
-    const response = yield* HttpClient.post(`/api/carts/${cartId}/checkout`);
-    assert.strictEqual(response.status, 201);
-    return yield* response.json;
-  });
 
 const listOrders = HttpClient.get("/api/admin/orders");
 

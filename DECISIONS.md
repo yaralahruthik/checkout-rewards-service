@@ -299,10 +299,10 @@ RETURNING ...
 - A periodically refreshed summary table or materialized view.
 - Aggregating on every request from orders, order line snapshots and coupons.
 
-**Choice:** Aggregate on read (`apps/api/src/features/report/`). `GET /api/admin/report` runs two `SELECT`s: one sums `subtotal_cents`, `discount_cents` and `total_cents` over `orders` and counts coupons by `redeemed_order_id`, and one groups `order_lines` by product. They run in one transaction so that a checkout committing between them cannot be counted in one and not the other. The transaction writes nothing.
+**Choice:** Aggregate on read (`apps/api/src/features/report/`). `GET /api/admin/report` is one `SELECT`. It sums `subtotal_cents`, `discount_cents` and `total_cents` over `orders`, counts coupons by `redeemed_order_id`, groups `order_lines` by product, and joins the one totals row to every product row. A single statement reads a single snapshot, on SQLite and on Postgres under `READ COMMITTED` alike, so a checkout committing mid-report cannot be counted in the totals but not the products. It needs no transaction, so it takes no write lock and writes nothing.
 
 - `grossRevenueCents` = Σ subtotal, `totalDiscountsCents` = Σ discount, `netRevenueCents` = Σ total. The orders table's `CHECK (total_cents = subtotal_cents - discount_cents)` makes gross − discounts = net hold row by row, so it also holds for the sums.
-- Per-product quantities come from the line snapshots, never from the live catalog, so a later price change or restock cannot change them. The report returns product ids only; the SPA labels them from the catalog.
+- Per-product quantities come from the line snapshots, never from the live catalog, so a later price change or restock cannot change them. Each product is labelled with the name on its most recent snapshot, so the report reads without the catalog.
 - `GET /api/admin/orders` lists every order with its lines, newest first (`created_at DESC`, then insertion order for orders placed in the same millisecond, since UUIDv7 is not monotonic within a millisecond).
 
 **Why:**
@@ -311,7 +311,9 @@ RETURNING ...
 - **No extra contention on checkout.** Counters would be one hot row that every checkout updates, so concurrent checkouts would serialize on it. That would be a new bottleneck exactly where the race guarantees matter.
 - **Read-only by construction.** The endpoint is a `GET` and issues only `SELECT`s. Test 6 asserts that two consecutive reports are identical and that the order and coupon lists are unchanged.
 
-**Consequences:** The report costs a scan of `orders`, `order_lines` and `coupons` per request, which is negligible at assignment scale. On SQLite the transaction is `BEGIN IMMEDIATE` behind the single connection, so a report briefly queues behind checkouts. On Postgres it would be `REPEATABLE READ READ ONLY`, which gives both statements one snapshot and blocks no one; under `READ COMMITTED` each statement would see its own snapshot. At scale, the next step is a summary maintained by the same transaction or rebuilt from the orders, not ad hoc counters.
+- **One statement, not a transaction.** Two `SELECT`s in a transaction would also be consistent on SQLite, but there the transaction is `BEGIN IMMEDIATE`, which takes the write lock for a pure read. On Postgres it would need `REPEATABLE READ` to share one snapshot. The single statement needs neither.
+
+**Consequences:** The report costs a scan of `orders`, `order_lines` and `coupons` per request, which is negligible at assignment scale. At scale, the next step is a summary maintained by the same transaction or rebuilt from the orders, not ad hoc counters. In the SPA, every successful mutation marks the report, order and coupon queries stale (`apps/web/src/api/queryClient.ts`), so the admin views follow checkouts and coupon generation without each mutation knowing their keys.
 
 **Deferred: pagination.** Order and coupon lists return everything (SPEC.md, out of scope). When it is needed, keyset pagination on `(created_at, id)` fits the newest-first order and stays stable while orders are inserted; offset pagination would skip or repeat rows under concurrent checkouts. The report needs no pagination because it is already aggregated.
 

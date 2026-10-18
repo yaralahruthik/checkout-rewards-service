@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
+import { Count } from "../../shared/count.ts";
 import { errorFields } from "../../shared/errors.ts";
 import { Cents } from "../../shared/money.ts";
 import { OrderId } from "../orders/OrdersApi.ts";
@@ -44,7 +45,7 @@ export const Cart = Schema.Struct({
   id: CartId,
   status: CartStatus,
   /** Total units across all lines. */
-  itemCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  itemCount: Count,
   subtotalCents: Cents,
   lines: Schema.Array(CartLine),
   /** Present once the cart is checked out: the order it produced. */

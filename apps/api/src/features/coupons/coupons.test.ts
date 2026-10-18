@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import { Effect } from "effect";
-import { HttpBody, HttpClient } from "effect/http";
+import { HttpClient } from "effect/http";
+import { placeOrder } from "../../testing/shop.ts";
 import { TestApi } from "../../testing/TestApi.ts";
 
 /** The coupon response body, typed for reading fields in assertions. */
@@ -19,17 +20,7 @@ const COUPON_CODE = /^SAVE10-[0-9ABCDEFGHJKMNPQRSTVWXYZ]{8}$/;
 
 /** Places `count` orders, each from a new cart holding one unit of product 1. */
 const placeOrders = (count: number) =>
-  Effect.forEach(Array.from({ length: count }), () =>
-    Effect.gen(function* () {
-      const cart = yield* HttpClient.post("/api/carts").pipe(Effect.flatMap((r) => r.json));
-      const cartId = (cart as { id: string }).id;
-      yield* HttpClient.put(`/api/carts/${cartId}/items/1`, {
-        body: HttpBody.jsonUnsafe({ quantity: 1 }),
-      });
-      const response = yield* HttpClient.post(`/api/carts/${cartId}/checkout`);
-      assert.strictEqual(response.status, 201);
-    }),
-  );
+  Effect.forEach(Array.from({ length: count }), () => placeOrder([1, 1]));
 
 const generate = HttpClient.post("/api/admin/coupons/generate");
 

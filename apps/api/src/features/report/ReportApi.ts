@@ -1,13 +1,15 @@
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api";
 import { AdminAuth } from "../../shared/admin.ts";
+import { Count } from "../../shared/count.ts";
 import { Cents } from "../../shared/money.ts";
 import { ProductId } from "../products/ProductsApi.ts";
 
-const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
-
 export const ProductSales = Schema.Struct({
   productId: ProductId,
+  productName: Schema.String.annotate({
+    description: "The name on the product's most recent order line snapshot.",
+  }),
   /** Summed over every order's line snapshots for this product. */
   purchasedQuantity: Count,
 }).annotate({ identifier: "ProductSales" });

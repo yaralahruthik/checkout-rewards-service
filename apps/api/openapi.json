@@ -801,6 +801,10 @@
           "productId": {
             "$ref": "#/components/schemas/ProductId"
           },
+          "productName": {
+            "type": "string",
+            "description": "The name on the product's most recent order line snapshot."
+          },
           "purchasedQuantity": {
             "type": "integer",
             "minimum": 0,
@@ -809,6 +813,7 @@
         },
         "required": [
           "productId",
+          "productName",
           "purchasedQuantity"
         ],
         "additionalProperties": false

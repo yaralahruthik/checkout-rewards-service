@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api";
 import { AdminAuth } from "../../shared/admin.ts";
+import { Count } from "../../shared/count.ts";
 import { errorFields } from "../../shared/errors.ts";
 import { Cents } from "../../shared/money.ts";
 
@@ -9,7 +10,7 @@ export const ProductId = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).anno
 });
 export type ProductId = typeof ProductId.Type;
 
-export const Inventory = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+export const Inventory = Count;
 
 export const Product = Schema.Struct({
   id: ProductId,

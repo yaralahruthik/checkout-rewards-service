@@ -1,7 +1,4 @@
-import { useQueryClient } from "@tanstack/react-query";
-import { getAdminReportGetReportQueryKey } from "@/api/generated/admin-report/admin-report";
 import {
-  getAdminCouponsListCouponsQueryKey,
   useAdminCouponsGenerateCoupon,
   useAdminCouponsListCoupons,
 } from "@/api/generated/admin-coupons/admin-coupons";
@@ -52,18 +49,9 @@ const CouponList = () => {
 
 /** Generates the coupon for the oldest unrewarded milestone and lists every coupon. */
 export const CouponsPanel = () => {
-  const queryClient = useQueryClient();
-  // The fetcher throws `ApiError`, not the bare error body orval assumes.
-  const generate = useAdminCouponsGenerateCoupon<ApiError>({
-    mutation: {
-      // The report counts coupons too.
-      onSuccess: () =>
-        Promise.all([
-          queryClient.invalidateQueries({ queryKey: getAdminCouponsListCouponsQueryKey() }),
-          queryClient.invalidateQueries({ queryKey: getAdminReportGetReportQueryKey() }),
-        ]),
-    },
-  });
+  // The fetcher throws `ApiError`, not the bare error body orval assumes. The
+  // query client refreshes the coupon list and the report on success.
+  const generate = useAdminCouponsGenerateCoupon<ApiError>();
 
   return (
     <div className="grid gap-4">

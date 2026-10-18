@@ -1,45 +1,39 @@
 import { assert, it } from "@effect/vitest";
 import { Effect } from "effect";
-import { HttpBody, HttpClient } from "effect/http";
+import { HttpBody, HttpClient, type HttpClientResponse } from "effect/http";
+import { cartWith, checkout, placeOrder } from "../../testing/shop.ts";
 import { TestApi } from "../../testing/TestApi.ts";
 
-/** The order and coupon bodies, typed for reading fields in assertions. */
+/** The response bodies, typed for reading fields in assertions. */
 type OrderBody = {
   readonly subtotalCents: number;
   readonly discountCents: number;
   readonly totalCents: number;
-  readonly lines: ReadonlyArray<{ readonly productId: number; readonly quantity: number }>;
+  readonly lines: ReadonlyArray<{
+    readonly productId: number;
+    readonly productName: string;
+    readonly quantity: number;
+  }>;
 };
 type CouponBody = { readonly code: string; readonly status: string };
+type ReportBody = {
+  readonly orderCount: number;
+  readonly grossRevenueCents: number;
+  readonly totalDiscountsCents: number;
+  readonly netRevenueCents: number;
+  readonly coupons: { generated: number; available: number; redeemed: number };
+  readonly products: ReadonlyArray<{
+    productId: number;
+    productName: string;
+    purchasedQuantity: number;
+  }>;
+};
 
-/** A new cart holding the given `[productId, quantity]` lines. */
-const cartWith = (...lines: ReadonlyArray<readonly [number, number]>) =>
-  Effect.gen(function* () {
-    const cart = yield* HttpClient.post("/api/carts").pipe(Effect.flatMap((r) => r.json));
-    const cartId = (cart as { id: string }).id;
-    for (const [productId, quantity] of lines) {
-      yield* HttpClient.put(`/api/carts/${cartId}/items/${productId}`, {
-        body: HttpBody.jsonUnsafe({ quantity }),
-      });
-    }
-    return cartId;
-  });
-
-/** Checks out the cart, and returns the response status and error code. */
-const checkoutCart = (cartId: string, couponCode?: string) =>
-  Effect.gen(function* () {
-    const response = yield* HttpClient.post(`/api/carts/${cartId}/checkout`, {
-      body: HttpBody.jsonUnsafe(couponCode === undefined ? {} : { couponCode }),
-    });
-    const body = (yield* response.json) as { code?: string };
-    return { status: response.status, code: body.code };
-  });
-
-/** Checks out a new cart holding the lines. */
-const checkout = (
-  couponCode: string | undefined,
-  ...lines: ReadonlyArray<readonly [number, number]>
-) => cartWith(...lines).pipe(Effect.flatMap((cartId) => checkoutCart(cartId, couponCode)));
+/** The response status and, for an error, its code. */
+const outcome = (response: HttpClientResponse.HttpClientResponse) =>
+  response.json.pipe(
+    Effect.map((body) => ({ status: response.status, code: (body as { code?: string }).code })),
+  );
 
 const setInventory = (productId: number, availableInventory: number) =>
   HttpClient.patch(`/api/admin/products/${productId}`, {
@@ -61,49 +55,43 @@ it.effect(
   () =>
     Effect.gen(function* () {
       // n = 5, x = 10. Fifteen orders, three coupons, two of them redeemed.
-      yield* checkout(undefined, [1, 1]);
-      yield* checkout(undefined, [2, 2]);
-      yield* checkout(undefined, [4, 1]);
-      yield* checkout(undefined, [3, 1]);
-      yield* checkout(undefined, [1, 1], [4, 2]);
+      yield* placeOrder([1, 1]);
+      yield* placeOrder([2, 2]);
+      yield* placeOrder([4, 1]);
+      yield* placeOrder([3, 1]);
+      yield* placeOrder([1, 1], [4, 2]);
       const first = yield* generate;
       const short = yield* cartWith([6, 2]);
       yield* setInventory(6, 1);
-      assert.deepStrictEqual(yield* checkoutCart(short, first), {
+      assert.deepStrictEqual(yield* outcome(yield* checkout(short, { couponCode: first })), {
         status: 409,
         code: "INSUFFICIENT_INVENTORY",
       });
       yield* setInventory(6, 3);
-      assert.deepStrictEqual(yield* checkout(first, [4, 1]), { status: 201, code: undefined });
-      assert.deepStrictEqual(yield* checkout(first, [2, 1]), {
+      const discounted = yield* checkout(yield* cartWith([4, 1]), { couponCode: first });
+      assert.strictEqual(discounted.status, 201);
+      const taken = yield* checkout(yield* cartWith([2, 1]), { couponCode: first });
+      assert.deepStrictEqual(yield* outcome(taken), {
         status: 409,
         code: "COUPON_ALREADY_REDEEMED",
       });
-      assert.deepStrictEqual(yield* checkout("SAVE10-NOTACODE", [2, 1]), {
-        status: 422,
-        code: "COUPON_INVALID",
-      });
-      yield* checkout(undefined, [6, 3]);
-      yield* checkout(undefined, [2, 1]);
-      yield* checkout(undefined, [5, 1]);
-      yield* checkout(undefined, [3, 2]);
+      const unknown = yield* checkout(yield* cartWith([2, 1]), { couponCode: "SAVE10-NOTACODE" });
+      assert.deepStrictEqual(yield* outcome(unknown), { status: 422, code: "COUPON_INVALID" });
+      yield* placeOrder([6, 3]);
+      yield* placeOrder([2, 1]);
+      yield* placeOrder([5, 1]);
+      yield* placeOrder([3, 2]);
       const second = yield* generate;
-      assert.deepStrictEqual(yield* checkout(second, [5, 1]), { status: 201, code: undefined });
-      for (let i = 0; i < 4; i++) yield* checkout(undefined, [2, 1]);
+      const discountedAgain = yield* checkout(yield* cartWith([5, 1]), { couponCode: second });
+      assert.strictEqual(discountedAgain.status, 201);
+      for (let i = 0; i < 4; i++) yield* placeOrder([2, 1]);
       yield* generate;
 
       const orders = (yield* getJson("/api/admin/orders")) as ReadonlyArray<OrderBody>;
       const coupons = (yield* getJson("/api/admin/coupons")) as ReadonlyArray<CouponBody>;
       const response = yield* HttpClient.get("/api/admin/report");
       assert.strictEqual(response.status, 200);
-      const report = (yield* response.json) as {
-        readonly orderCount: number;
-        readonly grossRevenueCents: number;
-        readonly totalDiscountsCents: number;
-        readonly netRevenueCents: number;
-        readonly coupons: { generated: number; available: number; redeemed: number };
-        readonly products: ReadonlyArray<{ productId: number; purchasedQuantity: number }>;
-      };
+      const report = (yield* response.json) as ReportBody;
 
       // Worked by hand from the seeded prices.
       assert.deepStrictEqual<unknown>(report, {
@@ -113,12 +101,12 @@ it.effect(
         netRevenueCents: 97281,
         coupons: { generated: 3, available: 1, redeemed: 2 },
         products: [
-          { productId: 1, purchasedQuantity: 2 },
-          { productId: 2, purchasedQuantity: 7 },
-          { productId: 3, purchasedQuantity: 3 },
-          { productId: 4, purchasedQuantity: 4 },
-          { productId: 5, purchasedQuantity: 2 },
-          { productId: 6, purchasedQuantity: 3 },
+          { productId: 1, productName: "Mechanical Keyboard", purchasedQuantity: 2 },
+          { productId: 2, productName: "Wireless Mouse", purchasedQuantity: 7 },
+          { productId: 3, productName: "USB-C Hub", purchasedQuantity: 3 },
+          { productId: 4, productName: "Laptop Stand", purchasedQuantity: 4 },
+          { productId: 5, productName: "Noise-Cancelling Headphones", purchasedQuantity: 2 },
+          { productId: 6, productName: "Limited Edition Keycap Set", purchasedQuantity: 3 },
         ],
       });
 
@@ -136,13 +124,15 @@ it.effect(
         available: coupons.filter((c) => c.status === "AVAILABLE").length,
         redeemed: coupons.filter((c) => c.status === "REDEEMED").length,
       });
-      for (const { productId, purchasedQuantity } of report.products) {
-        const lines = orders.flatMap((o) => o.lines).filter((l) => l.productId === productId);
+      const allLines = orders.flatMap((o) => o.lines);
+      for (const { productId, productName, purchasedQuantity } of report.products) {
+        const lines = allLines.filter((l) => l.productId === productId);
         assert.strictEqual(purchasedQuantity, sum(lines.map((l) => l.quantity)));
+        assert.strictEqual(productName, lines[0]!.productName);
       }
       assert.strictEqual(
         sum(report.products.map((p) => p.purchasedQuantity)),
-        sum(orders.flatMap((o) => o.lines).map((l) => l.quantity)),
+        sum(allLines.map((l) => l.quantity)),
       );
 
       // Reading the report is a pure read.
