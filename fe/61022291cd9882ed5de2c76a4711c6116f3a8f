@@ -1,0 +1,59 @@
+apps/api/src/features/orders/orders.test.ts
+  s_0c1279600d5205::t_b0d4b74e17485b 4
+  s_0c1279600d5205::t_0c8c9a2963e62a 3
+apps/api/src/features/checkout/checkout.test.ts
+  s_0c1279600d5205::t_b0d4b74e17485b 4
+apps/api/src/features/products/ProductsApi.ts
+  s_0c1279600d5205::t_d5544deaff5d72 4,13
+apps/api/src/shared/count.ts
+  s_0c1279600d5205::t_d5544deaff5d72 1-4
+DECISIONS.md
+  s_0c1279600d5205::t_c3d84c93545000 302,305,314-316
+apps/api/src/features/report/ReportApi.ts
+  s_0c1279600d5205::t_6bd8e438741d87 4,10-12
+apps/api/src/features/coupons/CouponsApi.ts
+  s_0c1279600d5205::t_d5544deaff5d72 4,44
+apps/web/src/api/queryClient.ts
+  s_0c1279600d5205::t_b74210ee54b1f4 1-23
+apps/web/src/features/admin/CouponsPanel.tsx
+  s_0c1279600d5205::t_b74210ee54b1f4 52-54
+apps/api/src/features/coupons/coupons.test.ts
+  s_0c1279600d5205::t_0c8c9a2963e62a 3
+  s_0c1279600d5205::t_b0d4b74e17485b 4,23
+apps/api/src/features/carts/CartsApi.ts
+  s_0c1279600d5205::t_6bd8e438741d87 3
+  s_0c1279600d5205::t_d5544deaff5d72 48
+apps/api/openapi.json
+  s_0c1279600d5205::t_088580904224f9 804-807,816
+apps/web/src/features/admin/AdminPage.tsx
+  s_0c1279600d5205::t_b74210ee54b1f4 1,8-16,24-35
+apps/api/src/features/report/report.test.ts
+  s_0c1279600d5205::t_f92d016cd55ba1 3-4,7,12-16,19-30,32-36,58-62,66,71-74,78-83,85-87,94,104-109,127-129,131,135
+apps/web/src/features/admin/ReportPanel.tsx
+  s_0c1279600d5205::t_b74210ee54b1f4 45
+apps/web/src/main.tsx
+  s_0c1279600d5205::t_b74210ee54b1f4 1,5
+apps/api/src/features/report/ReportRepository.ts
+  s_0c1279600d5205::t_088580904224f9 67,74-76
+  s_0c1279600d5205::t_6bd8e438741d87 5-6,14-16,23,31-36,38,40-60,64-66,68-73,77-84,86
+apps/api/src/testing/shop.ts
+  s_0c1279600d5205::t_8d0c9b2cf01f84 1-39
+apps/api/src/features/report/ReportService.ts
+  s_0c1279600d5205::t_6bd8e438741d87 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe61022291cd9882ed5de2c76a4711c6116f3a8f",
+  "prompts": {},
+  "sessions": {
+    "s_0c1279600d5205": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "38441d62-7424-4c9c-9a3b-54066692d489",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "yaralahruthik <yaralahruthikreddy@gmail.com>"
+    }
+  }
+}
