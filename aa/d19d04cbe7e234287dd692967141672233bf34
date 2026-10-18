@@ -1,0 +1,29 @@
+DECISIONS.md
+  s_5610c8cff6b6fb::t_f5ebe481f4e771 34,399
+apps/api/src/shared/money.test.ts
+  s_5610c8cff6b6fb::t_faea3cbac50e5e 1-30
+apps/api/src/features/checkout/CheckoutService.ts
+  s_5610c8cff6b6fb::t_ea32d68ab7be39 4
+  s_5610c8cff6b6fb::t_0a0e2c437586b0 94-101
+apps/api/src/features/carts/CartService.ts
+  s_5610c8cff6b6fb::t_13ccc1ec55fd4d 2,25,30-34
+apps/api/src/shared/money.ts
+  s_5610c8cff6b6fb::t_13ccc1ec55fd4d 13-18,22-35
+  s_5610c8cff6b6fb::t_b756d9f8bdb19c 19-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aad19d04cbe7e234287dd692967141672233bf34",
+  "prompts": {},
+  "sessions": {
+    "s_5610c8cff6b6fb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37461d75-fc23-477d-a86e-2882d228459b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "yaralahruthik <yaralahruthikreddy@gmail.com>"
+    }
+  }
+}
