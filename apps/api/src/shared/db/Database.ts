@@ -8,6 +8,7 @@ import createProducts from "./migrations/0001_create_products.ts";
 import createCarts from "./migrations/0002_create_carts.ts";
 import createOrders from "./migrations/0003_create_orders.ts";
 import createCoupons from "./migrations/0004_create_coupons.ts";
+import addCouponRedemption from "./migrations/0005_add_coupon_redemption.ts";
 import { seed } from "./seed.ts";
 
 const migrations = SqliteMigrator.fromRecord({
@@ -15,6 +16,7 @@ const migrations = SqliteMigrator.fromRecord({
   "0002_create_carts": createCarts,
   "0003_create_orders": createOrders,
   "0004_create_coupons": createCoupons,
+  "0005_add_coupon_redemption": addCouponRedemption,
 });
 
 const migrateAndSeed = SqliteMigrator.run({ loader: migrations }).pipe(Effect.andThen(seed));

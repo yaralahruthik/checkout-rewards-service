@@ -353,7 +353,7 @@
             }
           },
           "409": {
-            "description": "The cart was already checked out; `orderId` is the order it produced. | The current subtotal differs from `expectedSubtotalCents`. Nothing changed: the cart is still open. Confirm the new totals and check out again with the new subtotal. | A requested quantity exceeds the product's available inventory.",
+            "description": "The cart was already checked out; `orderId` is the order it produced. | The current subtotal differs from `expectedSubtotalCents`. Nothing changed: the cart is still open. Confirm the new totals and check out again with the new subtotal. | A requested quantity exceeds the product's available inventory. | Another order already redeemed the coupon. Nothing changed: the cart is still open. Check out without it, or with another coupon.",
             "content": {
               "application/json": {
                 "schema": {
@@ -366,6 +366,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/InsufficientInventoryEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CouponAlreadyRedeemedEncoded"
                     }
                   ]
                 }
@@ -390,7 +393,7 @@
             }
           }
         },
-        "description": "In one transaction: closes the cart, prices its lines at current prices, takes the stock, and records the order with snapshots of every line. If any step fails, nothing changes: the cart stays open and stock is untouched.",
+        "description": "In one transaction: closes the cart, prices its lines at current prices, takes the stock, redeems the coupon if one is given, and records the order with snapshots of every line. If any step fails, nothing changes: the cart stays open, stock is untouched and the coupon stays available.",
         "summary": "Check out a cart",
         "requestBody": {
           "content": {
@@ -989,6 +992,30 @@
           "totalCents": {
             "$ref": "#/components/schemas/Cents"
           },
+          "couponCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The coupon redeemed by this order, if any."
+          },
+          "discountPercent": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The coupon's percent. `discountCents` is floor(`subtotalCents` × percent / 100)."
+          },
           "createdAt": {
             "type": "string",
             "description": "When the order was placed (ISO 8601, UTC)."
@@ -1005,6 +1032,8 @@
           "subtotalCents",
           "discountCents",
           "totalCents",
+          "couponCode",
+          "discountPercent",
           "createdAt",
           "lines"
         ],
@@ -1095,6 +1124,38 @@
             },
             "required": [
               "cartId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "additionalProperties": false
+      },
+      "CouponAlreadyRedeemedEncoded": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "COUPON_ALREADY_REDEEMED"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "properties": {
+              "couponCode": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "couponCode"
             ],
             "additionalProperties": false
           }
@@ -1291,6 +1352,30 @@
           "totalCents": {
             "$ref": "#/components/schemas/Cents"
           },
+          "couponCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The coupon redeemed by this order, if any."
+          },
+          "discountPercent": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The coupon's percent. `discountCents` is floor(`subtotalCents` × percent / 100)."
+          },
           "createdAt": {
             "type": "string",
             "description": "When the order was placed (ISO 8601, UTC)."
@@ -1307,6 +1392,8 @@
           "subtotalCents",
           "discountCents",
           "totalCents",
+          "couponCode",
+          "discountPercent",
           "createdAt",
           "lines"
         ],

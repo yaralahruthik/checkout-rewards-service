@@ -38,6 +38,11 @@ const CouponList = () => {
           >
             {coupon.status === "AVAILABLE" ? "Available" : `Redeemed by ${coupon.redeemedOrderId}`}
           </Badge>
+          {coupon.redeemedAt !== null && (
+            <span className="text-sm text-muted-foreground">
+              {new Date(coupon.redeemedAt).toLocaleString()}
+            </span>
+          )}
         </li>
       ))}
     </ul>

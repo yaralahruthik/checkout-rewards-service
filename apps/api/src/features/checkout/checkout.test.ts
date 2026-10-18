@@ -9,6 +9,8 @@ type OrderBody = {
   readonly subtotalCents: number;
   readonly discountCents: number;
   readonly totalCents: number;
+  readonly couponCode: string | null;
+  readonly discountPercent: number | null;
   readonly createdAt: string;
   readonly lines: ReadonlyArray<{ readonly quantity: number }>;
 };
@@ -72,6 +74,8 @@ it.effect(
         subtotalCents: 23995,
         discountCents: 0,
         totalCents: 23995,
+        couponCode: null,
+        discountPercent: null,
         createdAt: order.createdAt,
         lines: [
           {
@@ -369,4 +373,161 @@ it.effect(
       assert.strictEqual(replay.status, 200);
       assert.deepStrictEqual<unknown>(yield* replay.json, order);
     }).pipe(Effect.provide(TestApi)),
+);
+
+/** Places five orders and generates the coupon for that milestone: 10% off (TestApi's x). */
+const issueCoupon = Effect.gen(function* () {
+  for (let i = 0; i < 5; i++) {
+    assert.strictEqual((yield* checkout(yield* cartWith([1, 1]))).status, 201);
+  }
+  const response = yield* HttpClient.post("/api/admin/coupons/generate");
+  assert.strictEqual(response.status, 201);
+  return ((yield* response.json) as { code: string }).code;
+});
+
+const couponOf = (code: string) =>
+  HttpClient.get("/api/admin/coupons").pipe(
+    Effect.flatMap((response) => response.json),
+    Effect.map((coupons) =>
+      (
+        coupons as ReadonlyArray<{
+          code: string;
+          status: string;
+          redeemedOrderId: string | null;
+          redeemedAt: string | null;
+        }>
+      ).find((coupon) => coupon.code === code)!,
+    ),
+  );
+
+it.effect(
+  "a 10% coupon on a 1999-cent subtotal discounts 199 cents, rounding down, and is listed as redeemed by the order",
+  () =>
+    Effect.gen(function* () {
+      const code = yield* issueCoupon;
+      const cartId = yield* cartWith([4, 1]);
+
+      const response = yield* checkout(cartId, { couponCode: code, expectedSubtotalCents: 1999 });
+
+      assert.strictEqual(response.status, 201);
+      const order = (yield* response.json) as OrderBody;
+      assert.deepStrictEqual<unknown>(order, {
+        id: order.id,
+        subtotalCents: 1999,
+        discountCents: 199,
+        totalCents: 1800,
+        couponCode: code,
+        discountPercent: 10,
+        createdAt: order.createdAt,
+        lines: [
+          {
+            productId: 4,
+            productName: "Laptop Stand",
+            unitPriceCents: 1999,
+            quantity: 1,
+            lineTotalCents: 1999,
+          },
+        ],
+      });
+      const fetched = yield* HttpClient.get(`/api/orders/${order.id}`).pipe(
+        Effect.flatMap((r) => r.json),
+      );
+      assert.deepStrictEqual<unknown>(fetched, order);
+
+      const coupon = yield* couponOf(code);
+      assert.strictEqual(coupon.status, "REDEEMED");
+      assert.strictEqual(coupon.redeemedOrderId, order.id);
+      assert.isFalse(Number.isNaN(Date.parse(coupon.redeemedAt!)));
+    }).pipe(Effect.provide(TestApi)),
+);
+
+it.effect(
+  "two carts racing for one coupon: one order gets the discount, the other gets COUPON_ALREADY_REDEEMED and keeps its cart and stock",
+  () =>
+    Effect.gen(function* () {
+      const code = yield* issueCoupon;
+      // One unit each; 10% of 1999 is 199 and of 4999 is 499.
+      const contenders = [
+        { cartId: yield* cartWith([4, 1]), productId: 4, stock: 20, discountCents: 199 },
+        { cartId: yield* cartWith([6, 1]), productId: 6, stock: 3, discountCents: 499 },
+      ];
+
+      const responses = yield* Effect.forEach(
+        contenders,
+        ({ cartId }) => checkout(cartId, { couponCode: code }),
+        { concurrency: "unbounded" },
+      );
+
+      const winner = responses.findIndex((response) => response.status === 201);
+      const loser = 1 - winner;
+      assert.notStrictEqual(winner, -1);
+      assert.strictEqual(responses[loser]!.status, 409);
+      assert.deepStrictEqual<unknown>(yield* responses[loser]!.json, {
+        code: "COUPON_ALREADY_REDEEMED",
+        message: `Coupon ${code} has already been redeemed`,
+        details: { couponCode: code },
+      });
+      const order = (yield* responses[winner]!.json) as OrderBody;
+      assert.strictEqual(order.couponCode, code);
+      assert.strictEqual(order.discountPercent, 10);
+      assert.strictEqual(order.discountCents, contenders[winner]!.discountCents);
+      assert.strictEqual((yield* couponOf(code)).redeemedOrderId, order.id);
+
+      const { cartId, productId, stock } = contenders[loser]!;
+      assert.strictEqual((yield* cartOf(cartId)).status, "OPEN");
+      assert.strictEqual(yield* inventoryOf(productId), stock);
+    }).pipe(Effect.provide(TestApi)),
+);
+
+it.effect(
+  "a coupon given to a checkout that fails on stock stays available, and a later checkout redeems it",
+  () =>
+    Effect.gen(function* () {
+      const code = yield* issueCoupon;
+      const cartId = yield* cartWith([6, 3]);
+      yield* HttpClient.patch("/api/admin/products/6", {
+        body: HttpBody.jsonUnsafe({ availableInventory: 2 }),
+      });
+
+      const failed = yield* checkout(cartId, { couponCode: code });
+
+      assert.strictEqual(failed.status, 409);
+      assert.strictEqual(((yield* failed.json) as { code: string }).code, "INSUFFICIENT_INVENTORY");
+      const coupon = yield* couponOf(code);
+      assert.strictEqual(coupon.status, "AVAILABLE");
+      assert.isNull(coupon.redeemedOrderId);
+      assert.isNull(coupon.redeemedAt);
+
+      yield* HttpClient.put(`/api/carts/${cartId}/items/6`, {
+        body: HttpBody.jsonUnsafe({ quantity: 2 }),
+      });
+      const placed = yield* checkout(cartId, { couponCode: code });
+      assert.strictEqual(placed.status, 201);
+      const order = (yield* placed.json) as OrderBody;
+      assert.strictEqual(order.discountCents, 999);
+      assert.strictEqual(order.totalCents, 8999);
+      assert.strictEqual((yield* couponOf(code)).redeemedOrderId, order.id);
+    }).pipe(Effect.provide(TestApi)),
+);
+
+it.effect("an order placed with a coupon replays for the same code and conflicts without it", () =>
+  Effect.gen(function* () {
+    const code = yield* issueCoupon;
+    const cartId = yield* cartWith([3, 1]);
+    const order = (yield* checkout(cartId, { couponCode: code }).pipe(
+      Effect.flatMap((r) => r.json),
+    )) as OrderBody;
+
+    const replay = yield* checkout(cartId, { couponCode: code });
+    assert.strictEqual(replay.status, 200);
+    assert.deepStrictEqual<unknown>(yield* replay.json, order);
+
+    const conflict = yield* checkout(cartId);
+    assert.strictEqual(conflict.status, 409);
+    assert.deepStrictEqual<unknown>(yield* conflict.json, {
+      code: "CART_ALREADY_CHECKED_OUT",
+      message: `Cart ${cartId} is already checked out`,
+      details: { cartId, orderId: order.id },
+    });
+  }).pipe(Effect.provide(TestApi)),
 );

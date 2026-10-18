@@ -32,7 +32,8 @@ export class OrderRepository extends Context.Service<
         Request: OrderId,
         Result: OrderRow,
         execute: (id) => sql`
-          SELECT id, subtotal_cents, discount_cents, total_cents, created_at
+          SELECT id, subtotal_cents, discount_cents, total_cents, coupon_code, discount_percent,
+                 created_at
           FROM orders WHERE id = ${id}
         `,
       });

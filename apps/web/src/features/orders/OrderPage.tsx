@@ -47,7 +47,14 @@ const RetryCheckout = ({ cartId, order }: { readonly cartId: string; readonly or
       variant="outline"
       disabled={retry.isPending}
       onClick={() =>
-        retry.mutate({ id: cartId, data: { expectedSubtotalCents: order.subtotalCents } })
+        // The same coupon code (or none) as the original, so it replays.
+        retry.mutate({
+          id: cartId,
+          data:
+            order.couponCode === null
+              ? { expectedSubtotalCents: order.subtotalCents }
+              : { expectedSubtotalCents: order.subtotalCents, couponCode: order.couponCode },
+        })
       }
     >
       Retry checkout
@@ -99,7 +106,14 @@ export const OrderPage = ({
             ))}
             <div className="grid gap-1 pt-4">
               <TotalRow label="Subtotal" cents={order.data.subtotalCents} />
-              <TotalRow label="Discount" cents={-order.data.discountCents} />
+              <TotalRow
+                label={
+                  order.data.couponCode === null
+                    ? "Discount"
+                    : `Discount (${order.data.couponCode}, ${order.data.discountPercent}% off)`
+                }
+                cents={-order.data.discountCents}
+              />
               <TotalRow label="Total" cents={order.data.totalCents} strong />
             </div>
             <p className="mt-1 text-sm text-muted-foreground">

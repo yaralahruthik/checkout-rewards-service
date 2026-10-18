@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCents } from "@/lib/money";
 import { type CartHandle, useCart } from "./useCart";
@@ -152,9 +153,20 @@ export const CartPage = () => {
               <span className="tabular-nums">{formatCents(cart.data.subtotalCents)}</span>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              Prices are live: they reflect the current catalog until you check out.
+              Prices are live: they reflect the current catalog until you check out. A coupon's
+              discount is applied at checkout.
             </p>
-            <div className="flex justify-end pt-4">
+            <div className="flex flex-wrap items-end justify-end gap-3 pt-4">
+              <div className="grid gap-1">
+                <Label htmlFor="coupon-code">Coupon code</Label>
+                <Input
+                  id="coupon-code"
+                  className="w-48 font-mono"
+                  placeholder="SAVE10-…"
+                  value={cart.couponCode}
+                  onChange={(event) => cart.setCouponCode(event.target.value)}
+                />
+              </div>
               <Button
                 disabled={cart.isPending}
                 onClick={() => cart.checkout(cart.data!.subtotalCents)}

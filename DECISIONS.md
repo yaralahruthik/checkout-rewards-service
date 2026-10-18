@@ -146,9 +146,9 @@ This file is written incrementally as the service is built. Sections for invaria
 3. **Price them** at current prices: line total = unit price × quantity, subtotal = sum of line totals, all integer cents.
 4. **Price guard:** an `expectedSubtotalCents` that differs from the subtotal → `409 PRICE_CHANGED`; see the next decision.
 5. **Take the stock**, line by line in product-id order: `UPDATE products SET available_inventory = available_inventory - q WHERE id = ? AND available_inventory >= q`. A line that changes no row is short; its current inventory is re-read for the error. Every line is attempted, so `409 INSUFFICIENT_INVENTORY` lists every short line with requested and available quantities.
-6. **Redeem the coupon:** a stub until ticket 07. No coupons exist yet, so any `couponCode` is refused as `422 COUPON_INVALID`.
-7. **Insert the order and its line snapshots** (product name, unit price, quantity, line total copied from step 3). Orders are read back from the snapshots only, never joined to products, so later catalog changes do not alter them.
-8. **Commit.** Any failure in an earlier step (a typed error or a defect) rolls the whole transaction back: the cart is `OPEN` again and no inventory moved.
+6. **Redeem the coupon**, if a `couponCode` was given: `UPDATE coupons SET redeemed_order_id = ?, redeemed_at = ? WHERE code = ? AND redeemed_order_id IS NULL RETURNING ...`. No row changed means the code is unknown (`422 COUPON_INVALID`) or already redeemed (`409 COUPON_ALREADY_REDEEMED`); see the coupon redemption decision.
+7. **Insert the order and its line snapshots** (product name, unit price, quantity, line total copied from step 3; the coupon code, its percent and the discount from step 6). Orders are read back from the snapshots only, never joined to products, so later catalog changes do not alter them.
+8. **Commit.** Any failure in an earlier step (a typed error or a defect) rolls the whole transaction back: the cart is `OPEN` again, no inventory moved and the coupon is still available.
 
 After a successful checkout, `GET /api/carts/{id}` shows `orderId`, and `GET /api/orders/{id}` returns the order.
 
@@ -183,7 +183,7 @@ After a successful checkout, `GET /api/carts/{id}` shows `orderId`, and `GET /ap
 
 **Choice:** The cart. `POST /api/carts/{id}/checkout` takes an optional body `{ couponCode?, expectedSubtotalCents? }` (an empty body is the same as `{}`).
 
-- **Replay vs conflict.** When the claim changes no row because the cart is `CHECKED_OUT`, the request is compared with the one that placed the order. Same coupon code (both absent, until ticket 07 stores codes on orders) → **replay**: `200` with the existing order, read back from its snapshots. A different coupon code → `409 CART_ALREADY_CHECKED_OUT` with `orderId` in `details`. The first checkout answers `201`, so a client can tell "placed now" from "already placed". `expectedSubtotalCents` is ignored on replay: prices may have moved since, and the order already records what was charged.
+- **Replay vs conflict.** When the claim changes no row because the cart is `CHECKED_OUT`, the request is compared with the one that placed the order. Same coupon code as the order records (or both absent) → **replay**: `200` with the existing order, read back from its snapshots. A different coupon code → `409 CART_ALREADY_CHECKED_OUT` with `orderId` in `details`. The first checkout answers `201`, so a client can tell "placed now" from "already placed". `expectedSubtotalCents` is ignored on replay: prices may have moved since, and the order already records what was charged.
 - **Only the coupon code is compared.** It is the only input that changes what the order is. The cart's lines cannot differ, because a checked-out cart cannot change: `PUT` and `DELETE` on its items return `409 CART_NOT_OPEN`. That guard is in the write itself (`INSERT ... SELECT ... FROM carts WHERE id = ? AND status = 'OPEN'`, and `DELETE ... AND EXISTS (... status = 'OPEN')`), not a status read beforehand, so a checkout cannot land between a check and the write.
 - **Price guard.** After pricing the lines, if `expectedSubtotalCents` is present and differs from the computed subtotal, checkout fails with `409 PRICE_CHANGED`, carrying the expected subtotal, the new subtotal and the newly priced lines. The transaction rolls back, so the cart stays `OPEN` and no stock moves. The SPA always sends the subtotal on screen; on `PRICE_CHANGED` it shows the new totals and, on confirmation, checks out again with the new value. The field is optional so a plain API client can still check out, accepting current prices.
 
@@ -219,7 +219,7 @@ After a successful checkout, `GET /api/carts/{id}` shows `orderId`, and `GET /ap
   RETURNING ...
   ```
   No row back means no milestone is eligible, and the request gets `409 NO_ELIGIBLE_MILESTONE` with `orderCount` and `nextMilestoneOrderCount` in `details`. Those are read after the refusal, so a request that lost a race reports the milestone after the one the winner took.
-- **A coupon stores** its code, its milestone order count (`UNIQUE`), the discount percent copied from config at generation, and a created timestamp. The code is `SAVE<x>-` plus 8 Crockford base32 characters (40 bits from `crypto.getRandomValues`, behind the `Ids` reference) and is the primary key. The redemption columns (`redeemed_order_id UNIQUE`, `redeemed_at`) exist from the start and stay null until ticket 07.
+- **A coupon stores** its code, its milestone order count (`UNIQUE`), the discount percent copied from config at generation, and a created timestamp. The code is `SAVE<x>-` plus 8 Crockford base32 characters (40 bits from `crypto.getRandomValues`, behind the `Ids` reference) and is the primary key. The redemption columns (`redeemed_order_id UNIQUE`, `redeemed_at`) are null until checkout redeems the coupon.
 - **`GET /api/admin/coupons`** lists every coupon, newest milestone first, with `status` `AVAILABLE` or `REDEEMED` derived from `redeemed_order_id`.
 
 | Invariant                | Guard in the statement                                | Constraint in the schema         |
@@ -232,7 +232,7 @@ After a successful checkout, `GET /api/carts/{id}` shows `orderId`, and `GET /ap
 - **Lazy, not eager.** Generation stays out of checkout, the hottest and most delicate transaction, and a generation bug cannot fail an order. It is also what the assignment's admin API asks for. The cost is that a milestone is only rewarded when someone asks, which is acceptable for an admin-driven reward.
 - **`COUNT(orders)`, not sequence ids.** A sequence can skip values (on Postgres a rolled-back insert still consumes its id, and every failed checkout rolls back), so "the order with id 5n" might never exist. A count of committed orders has no gaps.
 - **Percent snapshot per coupon.** A coupon is a promise made when it was issued. Copying x onto the row means changing `COUPON_DISCOUNT_PERCENT` later never changes what an issued coupon is worth; the code's `SAVE<x>-` prefix matches the snapshot.
-- **Bearer coupons without expiry.** There are no accounts to bind a coupon to, and the spec gives no expiry. Whoever holds the code can redeem it once (ticket 07 enforces once). Adding expiry later is a nullable `expires_at` column and one more condition on the redemption update.
+- **Bearer coupons without expiry.** There are no accounts to bind a coupon to, and the spec gives no expiry. Whoever holds the code can redeem it once. Adding expiry later is a nullable `expires_at` column and one more condition on the redemption update.
 - **Portable to Postgres under READ COMMITTED.** Two concurrent statements there can both see the same coupon count and pick the same milestone. The second blocks on the unique index entry the first inserted, then sees the conflict once the first commits; `DO NOTHING` turns that into "no row", so the loser is refused rather than erroring. No serializable isolation or retry loop is needed.
 
 **What the race test does and does not prove:** test 5 (`coupons.test.ts`) fires five concurrent generate requests at exactly one eligible milestone and asserts one `201` and four `NO_ELIGIBLE_MILESTONE`, then that a sixth request before the next milestone is refused. A mutation check showed its limit: splitting the count read from the insert into two statements _and_ dropping the unique constraint still passed, because on the in-memory SQLite client the requests did not interleave between the two statements. So the test pins the observable behaviour, but the guarantee against over-issuing rests on the single statement and the unique constraint, argued above, not on the test.
@@ -240,6 +240,54 @@ After a successful checkout, `GET /api/carts/{id}` shows `orderId`, and `GET /ap
 **Changing n:** future milestones are reinterpreted as (coupons generated + 1) × new n; issued coupons are unaffected. This is documented, not engineered. Two consequences follow. Raising n postpones the next coupon (with 2 coupons and n changed from 5 to 10, the next milestone is 30, not 15). Lowering n can make the next milestone equal one already issued (with 4 coupons at 5–20 and n changed to 2, the next milestone is 10). The unique constraint then refuses it permanently, and generation answers `NO_ELIGIBLE_MILESTONE` forever. Recovering would need milestones computed from the highest issued milestone instead of the count, which is the change to make if n ever becomes runtime-configurable.
 
 **Consequences:** Generation is safe to call any number of times, concurrently. A 40-bit code collision is not retried: it fails the request with a 500 (primary-key violation) and the next request succeeds. With at most one coupon per n orders, the chance is negligible.
+
+## Decision: Coupon redemption — one guarded update inside checkout
+
+**Context:** A shopper supplies a coupon code at checkout. A coupon must be redeemed at most once, even when two checkouts race for it, and must never be consumed by a checkout that fails. The discount must be deterministic and must never make a total negative.
+
+**Options considered:**
+
+- Read the coupon, check it is unredeemed, place the order, then mark the coupon redeemed (check-then-act).
+- Redeem in its own transaction before checkout, and release the coupon if checkout fails (compensation).
+- Redeem with a conditional update inside the checkout transaction, so it commits or rolls back with the order.
+
+**Choice:** The last, as step 6 of checkout (`apps/api/src/features/checkout/CheckoutService.ts`, `CouponRepository.redeem`):
+
+```sql
+UPDATE coupons SET redeemed_order_id = ?, redeemed_at = ?
+WHERE code = ? AND redeemed_order_id IS NULL
+RETURNING ...
+```
+
+- **No row back** means the code is unknown or already taken. A follow-up read by code tells them apart: no coupon → `422 COUPON_INVALID`, a redeemed coupon → `409 COUPON_ALREADY_REDEEMED`. That read happens after the guarded write has already failed, so it only chooses the error message; it never decides whether the coupon is taken.
+- **Rollback, not compensation.** Every later failure, and every typed error in the transaction, rolls the redemption back with the claim and the stock, so a coupon cannot be lost to a checkout that fails (test 4). The losing side of a race gets its whole transaction rolled back: its cart stays `OPEN` and its stock is untouched (test 3).
+- **The order records** `couponCode`, `discountPercent` (copied from the coupon's snapshot, returned by the update) and `discountCents`. The coupon records `redeemedOrderId` and `redeemedAt`, which `GET /api/admin/coupons` shows. Replay compares the request's code with the order's `couponCode` (see the replay decision).
+
+**Ordering within the transaction:**
+
+- **After the stock (step 5).** Correctness does not depend on the order, because every step rolls back together. Redeeming last of the guarded writes means a request that would fail on stock anyway never touches the coupon row, and on Postgres the coupon's row lock is held for the shortest possible time. A request with both a short line and a taken coupon is reported as `INSUFFICIENT_INVENTORY`.
+- **Before the order insert (step 7).** The discount needs the coupon's percent, and taking it from the guarded update's `RETURNING` means the percent the order uses is the one on the row it redeemed. The coupon therefore references an order that does not exist yet. Migration `0005_add_coupon_redemption` rebuilds `coupons` with `redeemed_order_id ... REFERENCES orders (id) DEFERRABLE INITIALLY DEFERRED`, so that reference is checked at commit, after the order is inserted. SQLite cannot alter a constraint in place, so the table is rebuilt; Postgres supports the same deferred constraint.
+
+| Invariant                    | Guard in the statement                    | Constraint in the schema                                                                        |
+| ---------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| One redemption per coupon    | `redeemed_order_id IS NULL` on the redeem | `UNIQUE (coupon_code)` on `orders`                                                              |
+| One coupon per order         | `couponCode` is a single field            | `UNIQUE (redeemed_order_id)` on `coupons`                                                       |
+| An order has a coupon or not | —                                         | `CHECK ((coupon_code IS NULL) = (discount_percent IS NULL))`; `coupon_code` references a coupon |
+
+**Money and rounding:**
+
+- All amounts are integer cents. Discount = floor(subtotal × percent / 100), clamped to the subtotal; total = subtotal − discount. `discountCents` in `apps/api/src/shared/money.ts` computes the floor without floating point: it subtracts the remainder of subtotal × percent modulo 100 before dividing, so the division is exact.
+- **Rounding down** never over-discounts: the store gives at most x%, never a fraction of a cent more. 10% of 1999 is 199, so the total is 1800 (test 7).
+- **The clamp** cannot trigger while percent is at most 100 (checked on the coupon row), but it keeps "never negative" true by construction, and the order table's `CHECK (total_cents >= 0)` backs it.
+- **The discount applies to the whole subtotal.** There are no per-product or per-category coupons, so a line-by-line discount would only add rounding drift (floors of lines summing to less than the floor of the total).
+
+**One coupon per order.** `couponCode` is a single optional string. Stacking would raise questions the brief does not answer (applied to the subtotal or to each other's result, in what order) and makes the discount depend on that order. One code per order keeps the discount a function of the subtotal and one percent.
+
+**Portable to Postgres under READ COMMITTED.** Two checkouts with the same code both run the `UPDATE`; the second blocks on the row lock of the first, then re-evaluates `redeemed_order_id IS NULL` against the committed row. If the first committed, the second changes no row and is refused; if the first rolled back (say, on stock), the second redeems it. That last case is the "never lost to a failed checkout" rule holding under contention.
+
+**What the race test proves:** test 3 (`checkout.test.ts`) fires two checkouts with the same code concurrently and asserts one `201` with the discount and one `COUPON_ALREADY_REDEEMED`, with the loser's cart `OPEN` and stock unchanged. A mutation check (dropping `AND redeemed_order_id IS NULL`) made it fail: the second update then overwrites the first redemption and the unique index on `orders.coupon_code` rejects the insert, which surfaces as a 500 instead of a clean 409.
+
+**Consequences:** A shopper whose coupon is taken by someone else gets a clear 409 and can check out the same cart without it. The cart view does not preview discounts (SPEC.md); the order shows the discount line once placed.
 
 ## Configuration
 

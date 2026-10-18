@@ -67,6 +67,9 @@ export const useCart = () => {
     mutation: { onSuccess, onError: toastApiError },
   });
 
+  // The coupon code as typed. Kept here so confirming a price change sends it again.
+  const [couponCode, setCouponCode] = useState("");
+
   // The new totals from a PRICE_CHANGED refusal, waiting for the shopper to confirm.
   const [priceChange, setPriceChange] = useState<PriceChangedEncodedDetails | null>(null);
 
@@ -102,7 +105,13 @@ export const useCart = () => {
   /** Sends the subtotal the shopper is looking at, so a price change is refused, not charged. */
   const checkout = (expectedSubtotalCents: number) => {
     setPriceChange(null);
-    if (cartId !== null) checkoutCart.mutate({ id: cartId, data: { expectedSubtotalCents } });
+    const code = couponCode.trim();
+    if (cartId !== null) {
+      checkoutCart.mutate({
+        id: cartId,
+        data: code === "" ? { expectedSubtotalCents } : { expectedSubtotalCents, couponCode: code },
+      });
+    }
   };
 
   // A stored cart checked out elsewhere (another tab) cannot change: the next item starts a new one.
@@ -151,6 +160,8 @@ export const useCart = () => {
     setQuantity,
     remove,
     checkout,
+    couponCode,
+    setCouponCode,
     priceChange,
     dismissPriceChange: () => setPriceChange(null),
     quantityOf,

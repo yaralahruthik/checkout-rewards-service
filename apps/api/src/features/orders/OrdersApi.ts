@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api";
 import { errorFields } from "../../shared/errors.ts";
-import { Cents } from "../../shared/money.ts";
+import { Cents, DiscountPercent } from "../../shared/money.ts";
 import { ProductId } from "../products/ProductsApi.ts";
 
 export const OrderId = Schema.String.check(Schema.isUUID(7)).annotate({
@@ -30,6 +30,12 @@ export const Order = Schema.Struct({
   discountCents: Cents,
   /** `subtotalCents - discountCents`. */
   totalCents: Cents,
+  couponCode: Schema.NullOr(Schema.String).annotate({
+    description: "The coupon redeemed by this order, if any.",
+  }),
+  discountPercent: Schema.NullOr(DiscountPercent).annotate({
+    description: "The coupon's percent. `discountCents` is floor(`subtotalCents` × percent / 100).",
+  }),
   createdAt: Schema.String.annotate({ description: "When the order was placed (ISO 8601, UTC)." }),
   lines: Schema.Array(OrderLine),
 }).annotate({

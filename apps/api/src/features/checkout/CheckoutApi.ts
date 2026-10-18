@@ -64,6 +64,20 @@ export class CouponInvalid extends Schema.Error<CouponInvalid>("CouponInvalid")(
 export const couponInvalid = (couponCode: string) =>
   new CouponInvalid({ message: `Coupon ${couponCode} does not exist`, details: { couponCode } });
 
+export class CouponAlreadyRedeemed extends Schema.Error<CouponAlreadyRedeemed>(
+  "CouponAlreadyRedeemed",
+)(errorFields("COUPON_ALREADY_REDEEMED", Schema.Struct({ couponCode: Schema.String })), {
+  httpApiStatus: 409,
+  description:
+    "Another order already redeemed the coupon. Nothing changed: the cart is still open. Check out without it, or with another coupon.",
+}) {}
+
+export const couponAlreadyRedeemed = (couponCode: string) =>
+  new CouponAlreadyRedeemed({
+    message: `Coupon ${couponCode} has already been redeemed`,
+    details: { couponCode },
+  });
+
 export const CheckoutRequest = Schema.Struct({
   couponCode: Schema.optionalKey(Schema.String),
   /** The subtotal the shopper saw. Checkout is refused if it differs from the current one. */
@@ -88,12 +102,13 @@ export class CheckoutApi extends HttpApiGroup.make("checkout")
         PriceChanged,
         InsufficientInventory,
         CouponInvalid,
+        CouponAlreadyRedeemed,
       ],
     }).annotateMerge(
       OpenApi.annotations({
         summary: "Check out a cart",
         description:
-          "In one transaction: closes the cart, prices its lines at current prices, takes the stock, and records the order with snapshots of every line. If any step fails, nothing changes: the cart stays open and stock is untouched.",
+          "In one transaction: closes the cart, prices its lines at current prices, takes the stock, redeems the coupon if one is given, and records the order with snapshots of every line. If any step fails, nothing changes: the cart stays open, stock is untouched and the coupon stays available.",
       }),
     ),
   )

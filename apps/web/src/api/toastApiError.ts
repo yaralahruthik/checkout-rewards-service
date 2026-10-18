@@ -11,6 +11,7 @@ const titles: Record<string, string> = {
   CART_NOT_OPEN: "Cart is checked out",
   PRICE_CHANGED: "Prices have changed",
   COUPON_INVALID: "Unknown coupon",
+  COUPON_ALREADY_REDEEMED: "Coupon already used",
   ORDER_NOT_FOUND: "Order not found",
 };
 

@@ -1,6 +1,7 @@
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { SqlClient, SqlSchema } from "effect/sql";
-import { Coupon } from "./CouponsApi.ts";
+import { OrderId } from "../orders/OrdersApi.ts";
+import { Coupon, CouponCode } from "./CouponsApi.ts";
 
 /** A coupon to issue; the repository decides which milestone it rewards. */
 export type NewCoupon = {
@@ -30,6 +31,19 @@ export class CouponRepository extends Context.Service<
     readonly progress: (milestoneInterval: number) => Effect.Effect<typeof MilestoneProgress.Type>;
     /** Every coupon, newest milestone first. */
     readonly list: Effect.Effect<ReadonlyArray<Coupon>>;
+    /** The coupon with this code, redeemed or not. */
+    readonly findByCode: (code: string) => Effect.Effect<Option.Option<Coupon>>;
+    /**
+     * Marks the coupon redeemed by `orderId`, only while it is unredeemed, and
+     * returns it. `None` when no row changed: the code is unknown or already
+     * redeemed. Run it inside the checkout transaction, before the order is
+     * inserted: the reference to the order is checked at commit.
+     */
+    readonly redeem: (
+      code: string,
+      orderId: OrderId,
+      redeemedAt: string,
+    ) => Effect.Effect<Option.Option<Coupon>>;
   }
 >()("api/coupons/CouponRepository") {
   static readonly layer = Layer.effect(
@@ -89,6 +103,29 @@ export class CouponRepository extends Context.Service<
         execute: () => sql`SELECT ${columns} FROM coupons ORDER BY milestone_order_count DESC`,
       })().pipe(Effect.orDie, Effect.withSpan("CouponRepository.list"));
 
+      const findByCodeQuery = SqlSchema.findOneOption({
+        Request: CouponCode,
+        Result: Coupon,
+        execute: (code) => sql`SELECT ${columns} FROM coupons WHERE code = ${code}`,
+      });
+
+      // The guard is in the statement: two checkouts redeeming the same code
+      // cannot both see it unredeemed. The unique order id and the unique
+      // coupon code on orders back it.
+      const redeemQuery = SqlSchema.findOneOption({
+        Request: Schema.Struct({
+          code: CouponCode,
+          orderId: OrderId,
+          redeemedAt: Schema.String,
+        }),
+        Result: Coupon,
+        execute: ({ code, orderId, redeemedAt }) => sql`
+          UPDATE coupons SET redeemed_order_id = ${orderId}, redeemed_at = ${redeemedAt}
+          WHERE code = ${code} AND redeemed_order_id IS NULL
+          RETURNING ${columns}
+        `,
+      });
+
       return CouponRepository.of({
         issueNext,
         progress: (milestoneInterval) =>
@@ -97,6 +134,13 @@ export class CouponRepository extends Context.Service<
             Effect.withSpan("CouponRepository.progress"),
           ),
         list,
+        findByCode: (code) =>
+          findByCodeQuery(code).pipe(Effect.orDie, Effect.withSpan("CouponRepository.findByCode")),
+        redeem: (code, orderId, redeemedAt) =>
+          redeemQuery({ code, orderId, redeemedAt }).pipe(
+            Effect.orDie,
+            Effect.withSpan("CouponRepository.redeem"),
+          ),
       });
     }),
   );

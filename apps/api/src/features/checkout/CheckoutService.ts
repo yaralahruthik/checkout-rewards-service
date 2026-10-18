@@ -1,9 +1,10 @@
 import { Context, DateTime, Effect, Layer, Option } from "effect";
 import { SqlClient } from "effect/sql";
 import { Ids } from "../../shared/ids.ts";
-import { lineTotalCents, subtotalCents } from "../../shared/money.ts";
+import { discountCents, lineTotalCents, subtotalCents } from "../../shared/money.ts";
 import { CartId, CartNotFound, cartNotFound } from "../carts/CartsApi.ts";
 import { CartRepository } from "../carts/CartRepository.ts";
+import { CouponRepository } from "../coupons/CouponRepository.ts";
 import { Order } from "../orders/OrdersApi.ts";
 import { OrderRepository } from "../orders/OrderRepository.ts";
 import {
@@ -15,10 +16,12 @@ import { ProductRepository } from "../products/ProductRepository.ts";
 import {
   CartAlreadyCheckedOut,
   type CheckoutRequest,
+  CouponAlreadyRedeemed,
   CouponInvalid,
   EmptyCart,
   PriceChanged,
   cartAlreadyCheckedOut,
+  couponAlreadyRedeemed,
   couponInvalid,
   emptyCart,
   priceChanged,
@@ -41,6 +44,7 @@ export class CheckoutService extends Context.Service<
       | PriceChanged
       | InsufficientInventory
       | CouponInvalid
+      | CouponAlreadyRedeemed
     >;
   }
 >()("api/checkout/CheckoutService") {
@@ -51,6 +55,7 @@ export class CheckoutService extends Context.Service<
       const carts = yield* CartRepository;
       const products = yield* ProductRepository;
       const orders = yield* OrderRepository;
+      const coupons = yield* CouponRepository;
 
       const placeOrder = Effect.fn("CheckoutService.placeOrder")(function* (
         cartId: CartId,
@@ -67,13 +72,13 @@ export class CheckoutService extends Context.Service<
             // Claim and order insert commit together, so this cannot happen.
             return yield* Effect.die(`Cart ${cartId} is checked out but has no order`);
           }
-          // A retry of the original request replays its order. No order has
-          // a coupon yet, so only a request without one matches.
-          if (request.couponCode === undefined) {
-            const order = yield* orders.findById(orderId);
-            if (Option.isNone(order)) {
-              return yield* Effect.die(`Order ${orderId} of cart ${cartId} does not exist`);
-            }
+          // A retry of the original request, with the same coupon code or
+          // none, replays its order.
+          const order = yield* orders.findById(orderId);
+          if (Option.isNone(order)) {
+            return yield* Effect.die(`Order ${orderId} of cart ${cartId} does not exist`);
+          }
+          if ((request.couponCode ?? null) === order.value.couponCode) {
             return { order: order.value, replayed: true };
           }
           return yield* cartAlreadyCheckedOut(cartId, orderId);
@@ -120,19 +125,34 @@ export class CheckoutService extends Context.Service<
           return yield* insufficientInventory(short);
         }
 
-        // 6. Redeem the coupon. None exist yet, so every code is unknown.
-        if (request.couponCode !== undefined) {
-          return yield* couponInvalid(request.couponCode);
+        const ids = yield* Ids;
+        const orderId = yield* ids.uuidv7;
+        const createdAt = DateTime.formatIso(yield* DateTime.now);
+
+        // 6. Redeem the coupon, only while it is unredeemed. No row changed
+        // means the code is unknown or another order has it.
+        const { couponCode = null } = request;
+        let discountPercent: number | null = null;
+        if (couponCode !== null) {
+          const coupon = yield* coupons.redeem(couponCode, orderId, createdAt);
+          if (Option.isNone(coupon)) {
+            return Option.isNone(yield* coupons.findByCode(couponCode))
+              ? yield* couponInvalid(couponCode)
+              : yield* couponAlreadyRedeemed(couponCode);
+          }
+          discountPercent = coupon.value.discountPercent;
         }
+        const discount = discountPercent === null ? 0 : discountCents(subtotal, discountPercent);
 
         // 7. Record the order and its snapshots.
-        const ids = yield* Ids;
         const order: Order = {
-          id: yield* ids.uuidv7,
+          id: orderId,
           subtotalCents: subtotal,
-          discountCents: 0,
-          totalCents: subtotal,
-          createdAt: DateTime.formatIso(yield* DateTime.now),
+          discountCents: discount,
+          totalCents: subtotal - discount,
+          couponCode,
+          discountPercent,
+          createdAt,
           lines,
         };
         yield* orders.insert({ ...order, cartId });
@@ -147,5 +167,12 @@ export class CheckoutService extends Context.Service<
 
       return CheckoutService.of({ checkout });
     }),
-  ).pipe(Layer.provide([CartRepository.layer, ProductRepository.layer, OrderRepository.layer]));
+  ).pipe(
+    Layer.provide([
+      CartRepository.layer,
+      ProductRepository.layer,
+      OrderRepository.layer,
+      CouponRepository.layer,
+    ]),
+  );
 }

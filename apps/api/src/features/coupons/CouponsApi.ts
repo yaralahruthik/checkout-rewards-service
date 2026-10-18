@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
 import { AdminAuth } from "../../shared/admin.ts";
 import { errorFields } from "../../shared/errors.ts";
+import { DiscountPercent } from "../../shared/money.ts";
 import { OrderId } from "../orders/OrdersApi.ts";
 
 export const CouponCode = Schema.String.annotate({
@@ -22,7 +23,7 @@ export const Coupon = Schema.Struct({
   /** The n-th order whose milestone this coupon rewards. */
   milestoneOrderCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
   /** Snapshotted from the configuration when the coupon was generated. */
-  discountPercent: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })),
+  discountPercent: DiscountPercent,
   status: CouponStatus,
   createdAt: Schema.String.annotate({
     description: "When the coupon was generated (ISO 8601, UTC).",

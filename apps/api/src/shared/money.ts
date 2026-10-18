@@ -17,3 +17,16 @@ export const lineTotalCents = (unitPriceCents: number, quantity: number): number
 /** The sum of the line totals. */
 export const subtotalCents = (lines: ReadonlyArray<{ readonly lineTotalCents: number }>): number =>
   lines.reduce((sum, line) => sum + line.lineTotalCents, 0);
+
+/**
+ * floor(subtotal × percent / 100), clamped to the subtotal so the total is
+ * never negative. The floor never over-discounts: 10% of 1999 is 199. The
+ * division is exact because the remainder is subtracted first.
+ */
+export const discountCents = (subtotal: number, percent: number): number => {
+  const scaled = subtotal * percent;
+  return Math.min(subtotal, (scaled - (scaled % 100)) / 100);
+};
+
+/** A coupon's discount: a whole percent from 1 to 100. */
+export const DiscountPercent = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 }));
