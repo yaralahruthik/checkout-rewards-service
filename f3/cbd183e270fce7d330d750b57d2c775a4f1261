@@ -1,0 +1,19 @@
+.scratch/checkout-rewards/issues/10-submission-docs.md
+  s_188eea48d68258::t_997e937e532d44 7,26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3cbd183e270fce7d330d750b57d2c775a4f1261",
+  "prompts": {},
+  "sessions": {
+    "s_188eea48d68258": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "63be15fd-e144-44b8-98b1-2963c36859a3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "yaralahruthik <yaralahruthikreddy@gmail.com>"
+    }
+  }
+}
