@@ -1,0 +1,37 @@
+.scratch/checkout-rewards/issues/01-walking-skeleton-catalog.md
+  s_f4c8861931ba37::t_2ea777af0fa079 1-24
+.scratch/checkout-rewards/issues/02-admin-product-updates.md
+  s_f4c8861931ba37::t_99f249c753e4a4 1-16
+.scratch/checkout-rewards/issues/03-carts.md
+  s_f4c8861931ba37::t_e17a0de389edbe 1-21
+.scratch/checkout-rewards/issues/04-checkout-and-order-snapshots.md
+  s_f4c8861931ba37::t_ee2432298ff380 1-21
+.scratch/checkout-rewards/issues/05-checkout-replay-and-price-guard.md
+  s_f4c8861931ba37::t_de4bf427fa88e7 1-17
+.scratch/checkout-rewards/issues/06-coupon-generation.md
+  s_f4c8861931ba37::t_07798e8660a663 1-19
+.scratch/checkout-rewards/issues/07-coupon-redemption-at-checkout.md
+  s_f4c8861931ba37::t_e2cde15af1cfaf 1-21
+.scratch/checkout-rewards/issues/08-admin-report-and-order-list.md
+  s_f4c8861931ba37::t_7c4b8f571044df 1-21
+.scratch/checkout-rewards/issues/09-race-it-demo.md
+  s_f4c8861931ba37::t_1a76610c1c4949 1-13
+.scratch/checkout-rewards/issues/10-submission-docs.md
+  s_f4c8861931ba37::t_c901cf27d4a7b9 1-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "958b619f8cf5f5dafd810417464d286d067db574",
+  "prompts": {},
+  "sessions": {
+    "s_f4c8861931ba37": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5b14de58-ab05-4b9f-b79b-2f8df60066c7",
+        "model": "unknown"
+      },
+      "human_author": "yaralahruthik <yaralahruthikreddy@gmail.com>"
+    }
+  }
+}
