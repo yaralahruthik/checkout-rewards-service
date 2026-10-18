@@ -1,0 +1,27 @@
+apps/web/package.json
+  s_daf56dffa95169::t_c1a7a9929b1b36 17
+apps/web/src/features/cart/CartPage.tsx
+  s_daf56dffa95169::t_beb3ba5dfc8958 1,75,77
+apps/web/src/router.tsx
+  s_daf56dffa95169::t_beb3ba5dfc8958 1-48
+apps/web/src/main.tsx
+  s_daf56dffa95169::t_beb3ba5dfc8958 2,6,14
+pnpm-lock.yaml
+  s_daf56dffa95169::t_80c340d486d46b 61-63,1782-1785,1794-1813,2413-2415,2850-2853,3477-3486,3737-3741,5458-5459,5467-5491,5919-5920,6325-6326,7005-7010,7273-7276
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e2ac59f95c483739cf34a667b51e35d798d3fd22",
+  "prompts": {},
+  "sessions": {
+    "s_daf56dffa95169": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eed77c31-388c-469e-8e4d-c048f1d24ee0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "yaralahruthik <yaralahruthikreddy@gmail.com>"
+    }
+  }
+}
