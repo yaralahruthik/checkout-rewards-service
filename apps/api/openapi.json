@@ -610,6 +610,77 @@
         "description": "Every coupon with its status, newest milestone first.",
         "summary": "List coupons"
       }
+    },
+    "/api/admin/orders": {
+      "get": {
+        "tags": [
+          "Admin: orders"
+        ],
+        "operationId": "adminOrders.listOrders",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Order_1"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not match the endpoint's schema.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Every order with its line snapshots, newest first. Not paginated (see DECISIONS.md).",
+        "summary": "List orders"
+      }
+    },
+    "/api/admin/report": {
+      "get": {
+        "tags": [
+          "Admin: report"
+        ],
+        "operationId": "adminReport.getReport",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Computed on every request from the orders, their line snapshots and the coupons, so it reconciles exactly with `GET /api/admin/orders` and `GET /api/admin/coupons`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Report"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not match the endpoint's schema.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Quantity sold per product, revenue before and after discounts, coupon counts and the order count. Read-only: requesting it never changes any state.",
+        "summary": "Get the report"
+      }
     }
   },
   "components": {
@@ -684,6 +755,220 @@
         ],
         "additionalProperties": false
       },
+      "Report": {
+        "type": "object",
+        "properties": {
+          "orderCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Successfully placed orders."
+          },
+          "grossRevenueCents": {
+            "$ref": "#/components/schemas/Cents_1"
+          },
+          "totalDiscountsCents": {
+            "$ref": "#/components/schemas/Cents_2"
+          },
+          "netRevenueCents": {
+            "$ref": "#/components/schemas/Cents_3"
+          },
+          "coupons": {
+            "$ref": "#/components/schemas/CouponCounts"
+          },
+          "products": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductSales"
+            },
+            "description": "Every product bought at least once, by product id."
+          }
+        },
+        "required": [
+          "orderCount",
+          "grossRevenueCents",
+          "totalDiscountsCents",
+          "netRevenueCents",
+          "coupons",
+          "products"
+        ],
+        "additionalProperties": false,
+        "description": "Computed on every request from the orders, their line snapshots and the coupons, so it reconciles exactly with `GET /api/admin/orders` and `GET /api/admin/coupons`."
+      },
+      "ProductSales": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "$ref": "#/components/schemas/ProductId"
+          },
+          "purchasedQuantity": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "productId",
+          "purchasedQuantity"
+        ],
+        "additionalProperties": false
+      },
+      "ProductId": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "CouponCounts": {
+        "type": "object",
+        "properties": {
+          "generated": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "available": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "redeemed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "generated",
+          "available",
+          "redeemed"
+        ],
+        "additionalProperties": false,
+        "description": "`generated` = `available` + `redeemed`."
+      },
+      "Cents_3": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991,
+        "description": "Sum of the orders' `totalCents`: `grossRevenueCents - totalDiscountsCents`."
+      },
+      "Cents_2": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991,
+        "description": "Sum of the orders' `discountCents`."
+      },
+      "Cents_1": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991,
+        "description": "Sum of the orders' `subtotalCents`."
+      },
+      "Order_1": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/OrderId"
+          },
+          "subtotalCents": {
+            "$ref": "#/components/schemas/Cents"
+          },
+          "discountCents": {
+            "$ref": "#/components/schemas/Cents"
+          },
+          "totalCents": {
+            "$ref": "#/components/schemas/Cents"
+          },
+          "couponCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The coupon redeemed by this order, if any."
+          },
+          "discountPercent": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The coupon's percent. `discountCents` is floor(`subtotalCents` × percent / 100)."
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "When the order was placed (ISO 8601, UTC)."
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderLine"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "subtotalCents",
+          "discountCents",
+          "totalCents",
+          "couponCode",
+          "discountPercent",
+          "createdAt",
+          "lines"
+        ],
+        "additionalProperties": false,
+        "description": "A placed order. Its lines and totals never change after checkout."
+      },
+      "OrderLine": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "$ref": "#/components/schemas/ProductId"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "unitPriceCents": {
+            "$ref": "#/components/schemas/Cents"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "lineTotalCents": {
+            "$ref": "#/components/schemas/Cents"
+          }
+        },
+        "required": [
+          "productId",
+          "productName",
+          "unitPriceCents",
+          "quantity",
+          "lineTotalCents"
+        ],
+        "additionalProperties": false,
+        "description": "The product's name and price as they were at checkout."
+      },
+      "Cents": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991,
+        "description": "An amount of money in integer cents (USD)."
+      },
+      "OrderId": {
+        "type": "string",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "format": "uuid",
+        "description": "A UUIDv7."
+      },
       "Coupon_1": {
         "type": "object",
         "properties": {
@@ -740,12 +1025,6 @@
         ],
         "additionalProperties": false,
         "description": "A bearer coupon: anyone holding the code can redeem it once. It never expires, and its percent never changes after generation."
-      },
-      "OrderId": {
-        "type": "string",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "format": "uuid",
-        "description": "A UUIDv7."
       },
       "CouponStatus": {
         "type": "string",
@@ -915,17 +1194,6 @@
         ],
         "additionalProperties": false
       },
-      "Cents": {
-        "type": "integer",
-        "minimum": 0,
-        "maximum": 9007199254740991,
-        "description": "An amount of money in integer cents (USD)."
-      },
-      "ProductId": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 9007199254740991
-      },
       "ProductIdEncoded": {
         "type": "string",
         "pattern": "^[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?$"
@@ -976,100 +1244,6 @@
           "details"
         ],
         "additionalProperties": false
-      },
-      "Order_1": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "$ref": "#/components/schemas/OrderId"
-          },
-          "subtotalCents": {
-            "$ref": "#/components/schemas/Cents"
-          },
-          "discountCents": {
-            "$ref": "#/components/schemas/Cents"
-          },
-          "totalCents": {
-            "$ref": "#/components/schemas/Cents"
-          },
-          "couponCode": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The coupon redeemed by this order, if any."
-          },
-          "discountPercent": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The coupon's percent. `discountCents` is floor(`subtotalCents` × percent / 100)."
-          },
-          "createdAt": {
-            "type": "string",
-            "description": "When the order was placed (ISO 8601, UTC)."
-          },
-          "lines": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OrderLine"
-            }
-          }
-        },
-        "required": [
-          "id",
-          "subtotalCents",
-          "discountCents",
-          "totalCents",
-          "couponCode",
-          "discountPercent",
-          "createdAt",
-          "lines"
-        ],
-        "additionalProperties": false,
-        "description": "A placed order. Its lines and totals never change after checkout."
-      },
-      "OrderLine": {
-        "type": "object",
-        "properties": {
-          "productId": {
-            "$ref": "#/components/schemas/ProductId"
-          },
-          "productName": {
-            "type": "string"
-          },
-          "unitPriceCents": {
-            "$ref": "#/components/schemas/Cents"
-          },
-          "quantity": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 9007199254740991
-          },
-          "lineTotalCents": {
-            "$ref": "#/components/schemas/Cents"
-          }
-        },
-        "required": [
-          "productId",
-          "productName",
-          "unitPriceCents",
-          "quantity",
-          "lineTotalCents"
-        ],
-        "additionalProperties": false,
-        "description": "The product's name and price as they were at checkout."
       },
       "CouponInvalidEncoded": {
         "type": "object",
@@ -1610,6 +1784,12 @@
     },
     {
       "name": "Admin: coupons"
+    },
+    {
+      "name": "Admin: orders"
+    },
+    {
+      "name": "Admin: report"
     }
   ]
 }

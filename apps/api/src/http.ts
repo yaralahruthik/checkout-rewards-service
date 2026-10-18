@@ -6,6 +6,7 @@ import { CheckoutHandlers } from "./features/checkout/checkout.http.ts";
 import { CouponsHandlers } from "./features/coupons/coupons.http.ts";
 import { OrdersHandlers } from "./features/orders/orders.http.ts";
 import { ProductsHandlers } from "./features/products/products.http.ts";
+import { ReportHandlers } from "./features/report/report.http.ts";
 import { AdminAuthLive } from "./shared/admin.ts";
 import { RequestValidationLive } from "./shared/errors.ts";
 
@@ -22,6 +23,7 @@ const Handlers = Layer.mergeAll(
   CheckoutHandlers,
   OrdersHandlers,
   CouponsHandlers,
+  ReportHandlers,
 ).pipe(Layer.provideMerge(Layer.mergeAll(RequestValidationLive, AdminAuthLive)));
 
 export const ApiRoutes = Layer.mergeAll(

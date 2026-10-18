@@ -6,6 +6,7 @@ export class OrderService extends Context.Service<
   OrderService,
   {
     readonly get: (id: OrderId) => Effect.Effect<Order, OrderNotFound>;
+    readonly list: Effect.Effect<ReadonlyArray<Order>>;
   }
 >()("api/orders/OrderService") {
   static readonly layer = Layer.effect(
@@ -21,7 +22,7 @@ export class OrderService extends Context.Service<
         return order.value;
       });
 
-      return OrderService.of({ get });
+      return OrderService.of({ get, list: repository.list });
     }),
   ).pipe(Layer.provide(OrderRepository.layer));
 }

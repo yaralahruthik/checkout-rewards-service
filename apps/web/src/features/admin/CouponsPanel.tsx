@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { getAdminReportGetReportQueryKey } from "@/api/generated/admin-report/admin-report";
 import {
   getAdminCouponsListCouponsQueryKey,
   useAdminCouponsGenerateCoupon,
@@ -55,8 +56,12 @@ export const CouponsPanel = () => {
   // The fetcher throws `ApiError`, not the bare error body orval assumes.
   const generate = useAdminCouponsGenerateCoupon<ApiError>({
     mutation: {
+      // The report counts coupons too.
       onSuccess: () =>
-        queryClient.invalidateQueries({ queryKey: getAdminCouponsListCouponsQueryKey() }),
+        Promise.all([
+          queryClient.invalidateQueries({ queryKey: getAdminCouponsListCouponsQueryKey() }),
+          queryClient.invalidateQueries({ queryKey: getAdminReportGetReportQueryKey() }),
+        ]),
     },
   });
 

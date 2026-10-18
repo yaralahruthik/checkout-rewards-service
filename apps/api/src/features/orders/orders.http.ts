@@ -12,4 +12,15 @@ const OrdersGroup = HttpApiBuilder.group(
   }),
 );
 
-export const OrdersHandlers = OrdersGroup.pipe(Layer.provide(OrderService.layer));
+const AdminOrdersGroup = HttpApiBuilder.group(
+  Api,
+  "adminOrders",
+  Effect.fn("AdminOrdersHandlers")(function* (handlers) {
+    const orders = yield* OrderService;
+    return handlers.handle("listOrders", () => orders.list);
+  }),
+);
+
+export const OrdersHandlers = Layer.mergeAll(OrdersGroup, AdminOrdersGroup).pipe(
+  Layer.provide(OrderService.layer),
+);

@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api";
+import { AdminAuth } from "../../shared/admin.ts";
 import { errorFields } from "../../shared/errors.ts";
 import { Cents, DiscountPercent } from "../../shared/money.ts";
 import { ProductId } from "../products/ProductsApi.ts";
@@ -66,3 +67,19 @@ export class OrdersApi extends HttpApiGroup.make("orders")
     ),
   )
   .annotateMerge(OpenApi.annotations({ title: "Orders" })) {}
+
+export class AdminOrdersApi extends HttpApiGroup.make("adminOrders")
+  .add(
+    HttpApiEndpoint.get("listOrders", "/orders", {
+      success: Schema.Array(Order),
+    }).annotateMerge(
+      OpenApi.annotations({
+        summary: "List orders",
+        description:
+          "Every order with its line snapshots, newest first. Not paginated (see DECISIONS.md).",
+      }),
+    ),
+  )
+  .prefix("/admin")
+  .middleware(AdminAuth)
+  .annotateMerge(OpenApi.annotations({ title: "Admin: orders" })) {}
