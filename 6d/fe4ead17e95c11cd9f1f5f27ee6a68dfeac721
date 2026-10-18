@@ -1,0 +1,35 @@
+apps/api/src/features/products/ProductRepository.ts
+  s_5610c8cff6b6fb::t_a087d1649faf9a 3-10,23-27,29-31,80-81,83,85-108
+apps/api/src/features/checkout/CheckoutApi.ts
+  s_5610c8cff6b6fb::t_95493d113942b3 6
+apps/api/src/features/carts/CartRepository.ts
+  s_5610c8cff6b6fb::t_e7e6530fbb73aa 6-14,30-34,45-46,48,53-54,60,62-64,66,109-123,137-141,152-153,156-162
+apps/api/src/features/checkout/CheckoutService.ts
+  s_5610c8cff6b6fb::t_46cc53d7c967bf 58-60,95-97,103,105-108
+  s_5610c8cff6b6fb::t_349700d4e40b41 5,7,11
+DECISIONS.md
+  s_5610c8cff6b6fb::t_5d169935443e9d 198,202-203,316
+apps/api/src/features/carts/CartService.ts
+  s_5610c8cff6b6fb::t_46cc53d7c967bf 103,112
+apps/api/src/features/coupons/CouponsApi.ts
+  s_5610c8cff6b6fb::t_95493d113942b3 59-78
+  s_5610c8cff6b6fb::t_02e25c208d3107 57-58
+apps/api/src/features/coupons/CouponRepository.ts
+  s_5610c8cff6b6fb::t_0afe3bbd5587b3 4-11,43-46,52,112,135-148,157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6dfe4ead17e95c11cd9f1f5f27ee6a68dfeac721",
+  "prompts": {},
+  "sessions": {
+    "s_5610c8cff6b6fb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "37461d75-fc23-477d-a86e-2882d228459b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "yaralahruthik <yaralahruthikreddy@gmail.com>"
+    }
+  }
+}
