@@ -15,7 +15,9 @@ type CouponBody = {
   readonly redeemedAt: string | null;
 };
 
-// TestApi runs with n = 5 and x = 10.
+// TestApi runs with n = 5 and x = 10. SQLite runs one statement at a time, so
+// concurrent generate requests overlap but their inserts do not; the unique
+// milestone covers a database that interleaves them (DECISIONS.md, concurrency).
 const COUPON_CODE = /^SAVE10-[0-9ABCDEFGHJKMNPQRSTVWXYZ]{8}$/;
 
 /** Places `count` orders, each from a new cart holding one unit of product 1. */
@@ -30,7 +32,7 @@ const listCoupons = HttpClient.get("/api/admin/coupons").pipe(
 );
 
 it.effect(
-  "five concurrent generate requests at one eligible milestone issue exactly one coupon",
+  "five concurrent generate requests at one eligible milestone, serialized by the database, issue exactly one coupon",
   () =>
     Effect.gen(function* () {
       yield* placeOrders(5);
@@ -53,29 +55,47 @@ it.effect(
           details: { orderCount: 5, nextMilestoneOrderCount: 10 },
         });
       }
-
-      const coupon = (yield* issued[0]!.json) as CouponBody;
-      assert.match(coupon.code, COUPON_CODE);
-      assert.isFalse(Number.isNaN(Date.parse(coupon.createdAt)));
-      assert.deepStrictEqual<unknown>(coupon, {
-        code: coupon.code,
-        milestoneOrderCount: 5,
-        discountPercent: 10,
-        status: "AVAILABLE",
-        createdAt: coupon.createdAt,
-        redeemedOrderId: null,
-        redeemedAt: null,
-      });
-      assert.deepStrictEqual<unknown>(yield* listCoupons, [coupon]);
-
-      yield* placeOrders(4);
-      const early = yield* generate;
-      assert.strictEqual(early.status, 409);
-      const error = (yield* early.json) as { code: string; details: unknown };
-      assert.strictEqual(error.code, "NO_ELIGIBLE_MILESTONE");
-      assert.deepStrictEqual(error.details, { orderCount: 9, nextMilestoneOrderCount: 10 });
       assert.strictEqual((yield* listCoupons).length, 1);
     }).pipe(Effect.provide(TestApi)),
+);
+
+it.effect("a coupon is issued unredeemed, for its milestone, with a SAVE10 code", () =>
+  Effect.gen(function* () {
+    yield* placeOrders(5);
+
+    const response = yield* generate;
+
+    assert.strictEqual(response.status, 201);
+    const coupon = (yield* response.json) as CouponBody;
+    assert.match(coupon.code, COUPON_CODE);
+    assert.isFalse(Number.isNaN(Date.parse(coupon.createdAt)));
+    assert.deepStrictEqual<unknown>(coupon, {
+      code: coupon.code,
+      milestoneOrderCount: 5,
+      discountPercent: 10,
+      status: "AVAILABLE",
+      createdAt: coupon.createdAt,
+      redeemedOrderId: null,
+      redeemedAt: null,
+    });
+    assert.deepStrictEqual<unknown>(yield* listCoupons, [coupon]);
+  }).pipe(Effect.provide(TestApi)),
+);
+
+it.effect("before the first milestone, generating returns NO_ELIGIBLE_MILESTONE", () =>
+  Effect.gen(function* () {
+    yield* placeOrders(4);
+
+    const response = yield* generate;
+
+    assert.strictEqual(response.status, 409);
+    assert.deepStrictEqual<unknown>(yield* response.json, {
+      code: "NO_ELIGIBLE_MILESTONE",
+      message: "Order 5 is the next milestone; 4 orders have been placed",
+      details: { orderCount: 4, nextMilestoneOrderCount: 5 },
+    });
+    assert.deepStrictEqual<unknown>(yield* listCoupons, []);
+  }).pipe(Effect.provide(TestApi)),
 );
 
 it.effect("with two milestones skipped, each request issues the oldest unrewarded one", () =>

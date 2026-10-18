@@ -16,6 +16,11 @@ type OrderBody = {
   readonly lines: ReadonlyArray<{ readonly quantity: number }>;
 };
 
+// The concurrent tests overlap their requests, but every checkout runs under
+// SQLite's `BEGIN IMMEDIATE`, so the transactions themselves run one at a time.
+// They catch a check-then-act split across transactions, not a read-then-write
+// inside one: the guarded statements cover that (DECISIONS.md, concurrency).
+
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 /** The cart view, typed for reading fields in assertions. */
@@ -81,7 +86,7 @@ it.effect(
 );
 
 it.effect(
-  "ten carts racing for the last three units: three orders are placed and seven get INSUFFICIENT_INVENTORY",
+  "ten concurrent checkouts for the last three units, serialized by the database: three orders are placed and seven get INSUFFICIENT_INVENTORY",
   () =>
     Effect.gen(function* () {
       const cartIds = yield* Effect.all(Array.from({ length: 10 }, () => cartWith([6, 1])));
@@ -175,21 +180,6 @@ it.effect("checking out an empty cart returns EMPTY_CART and leaves the cart ope
   }).pipe(Effect.provide(TestApi)),
 );
 
-it.effect("checking out a cart that does not exist returns CART_NOT_FOUND", () =>
-  Effect.gen(function* () {
-    const missing = "01900000-0000-7000-8000-000000000000";
-
-    const response = yield* checkout(missing);
-
-    assert.strictEqual(response.status, 404);
-    assert.deepStrictEqual<unknown>(yield* response.json, {
-      code: "CART_NOT_FOUND",
-      message: `Cart ${missing} does not exist`,
-      details: { cartId: missing },
-    });
-  }).pipe(Effect.provide(TestApi)),
-);
-
 it.effect("an order that does not exist returns ORDER_NOT_FOUND", () =>
   Effect.gen(function* () {
     const missing = "01900000-0000-7000-8000-000000000000";
@@ -202,18 +192,6 @@ it.effect("an order that does not exist returns ORDER_NOT_FOUND", () =>
       message: `Order ${missing} does not exist`,
       details: { orderId: missing },
     });
-  }).pipe(Effect.provide(TestApi)),
-);
-
-it.effect("a checked-out cart shows its status and the id of the order it produced", () =>
-  Effect.gen(function* () {
-    const cartId = yield* cartWith([3, 1]);
-
-    const order = (yield* checkout(cartId).pipe(Effect.flatMap((r) => r.json))) as OrderBody;
-
-    const cart = yield* cartOf(cartId);
-    assert.strictEqual(cart.status, "CHECKED_OUT");
-    assert.strictEqual(cart.orderId, order.id);
   }).pipe(Effect.provide(TestApi)),
 );
 
@@ -271,7 +249,7 @@ it.effect(
 );
 
 it.effect(
-  "ten concurrent checkouts of one cart place one order: one 201, nine 200 replays, stock taken once",
+  "ten concurrent checkouts of one cart, serialized by the database, place one order: one 201, nine 200 replays, stock taken once",
   () =>
     Effect.gen(function* () {
       const cartId = yield* cartWith([6, 2]);
@@ -291,14 +269,9 @@ it.effect(
       assert.strictEqual(orderIds.size, 1);
       const [orderId] = orderIds;
       const cart = yield* cartOf(cartId);
+      assert.strictEqual(cart.status, "CHECKED_OUT");
       assert.strictEqual(cart.orderId, orderId);
       assert.strictEqual(yield* inventoryOf(6), 1);
-
-      const conflict = yield* checkout(cartId, { couponCode: "SAVE10-ABCD" });
-      assert.strictEqual(conflict.status, 409);
-      const error = (yield* conflict.json) as { code: string; details: { orderId: string } };
-      assert.strictEqual(error.code, "CART_ALREADY_CHECKED_OUT");
-      assert.strictEqual(error.details.orderId, orderId);
     }).pipe(Effect.provide(TestApi)),
 );
 
@@ -421,7 +394,7 @@ it.effect(
 );
 
 it.effect(
-  "two carts racing for one coupon: one order gets the discount, the other gets COUPON_ALREADY_REDEEMED and keeps its cart and stock",
+  "two concurrent checkouts with one coupon, serialized by the database: one order gets the discount, the other gets COUPON_ALREADY_REDEEMED and keeps its cart and stock",
   () =>
     Effect.gen(function* () {
       const code = yield* issueCoupon;

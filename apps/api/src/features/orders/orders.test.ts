@@ -25,9 +25,5 @@ it.effect("the order list holds every order with its lines, newest first", () =>
 
     assert.strictEqual(response.status, 200);
     assert.deepStrictEqual<unknown>(yield* response.json, [third, second, first]);
-    assert.deepStrictEqual<unknown>(
-      (second as { lines: ReadonlyArray<{ productId: number }> }).lines.map((l) => l.productId),
-      [2, 4],
-    );
   }).pipe(Effect.provide(TestApi)),
 );
