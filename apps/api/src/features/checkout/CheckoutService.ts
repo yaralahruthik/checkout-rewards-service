@@ -1,28 +1,21 @@
 import { Context, DateTime, Effect, Layer, Option } from "effect";
 import { SqlClient } from "effect/sql";
 import { Ids } from "../../shared/ids.ts";
-import { discountCents, lineTotalCents, subtotalCents } from "../../shared/money.ts";
-import { CartId, CartNotFound, cartNotFound } from "../carts/CartsApi.ts";
+import { discountCents, priceLines } from "../../shared/money.ts";
+import { CartId, CartNotFound } from "../carts/CartsApi.ts";
 import { CartRepository } from "../carts/CartRepository.ts";
+import { CouponAlreadyRedeemed, CouponInvalid } from "../coupons/CouponsApi.ts";
 import { CouponRepository } from "../coupons/CouponRepository.ts";
 import { Order } from "../orders/OrdersApi.ts";
 import { OrderRepository } from "../orders/OrderRepository.ts";
-import {
-  InsufficientInventory,
-  type ShortLine,
-  insufficientInventory,
-} from "../products/ProductsApi.ts";
+import { InsufficientInventory } from "../products/ProductsApi.ts";
 import { ProductRepository } from "../products/ProductRepository.ts";
 import {
   CartAlreadyCheckedOut,
   type CheckoutRequest,
-  CouponAlreadyRedeemed,
-  CouponInvalid,
   EmptyCart,
   PriceChanged,
   cartAlreadyCheckedOut,
-  couponAlreadyRedeemed,
-  couponInvalid,
   emptyCart,
   priceChanged,
 } from "./CheckoutApi.ts";
@@ -62,16 +55,9 @@ export class CheckoutService extends Context.Service<
         request: CheckoutRequest,
       ) {
         // 1. Claim the cart. Only one checkout can move it out of OPEN.
-        if (!(yield* carts.claim(cartId))) {
-          const cart = yield* carts.findById(cartId);
-          if (Option.isNone(cart)) {
-            return yield* cartNotFound(cartId);
-          }
-          const { orderId } = cart.value;
-          if (orderId === null) {
-            // Claim and order insert commit together, so this cannot happen.
-            return yield* Effect.die(`Cart ${cartId} is checked out but has no order`);
-          }
+        const claim = yield* carts.claim(cartId);
+        if (claim._tag === "CheckedOut") {
+          const { orderId } = claim;
           // A retry of the original request, with the same coupon code or
           // none, replays its order.
           const order = yield* orders.findById(orderId);
@@ -91,14 +77,14 @@ export class CheckoutService extends Context.Service<
         }
 
         // 3. Price them at current prices.
-        const lines = cartLines.map((line) => ({
-          productId: line.productId,
-          productName: line.productName,
-          unitPriceCents: line.unitPriceCents,
-          quantity: line.quantity,
-          lineTotalCents: lineTotalCents(line.unitPriceCents, line.quantity),
-        }));
-        const subtotal = subtotalCents(lines);
+        const { lines, subtotalCents: subtotal } = priceLines(
+          cartLines.map((line) => ({
+            productId: line.productId,
+            productName: line.productName,
+            unitPriceCents: line.unitPriceCents,
+            quantity: line.quantity,
+          })),
+        );
 
         // 4. Refuse a subtotal the shopper did not see.
         const { expectedSubtotalCents } = request;
@@ -106,42 +92,20 @@ export class CheckoutService extends Context.Service<
           return yield* priceChanged({ expectedSubtotalCents, subtotalCents: subtotal, lines });
         }
 
-        // 5. Take the stock, in product-id order. Keep going past a short line
-        // so the error lists every one; the rollback undoes the others.
-        const short: Array<ShortLine> = [];
-        for (const line of lines) {
-          if (yield* products.decrementInventory(line.productId, line.quantity)) continue;
-          const product = yield* products.findById(line.productId);
-          short.push({
-            productId: line.productId,
-            requestedQuantity: line.quantity,
-            availableInventory: Option.match(product, {
-              onNone: () => 0,
-              onSome: (product) => product.availableInventory,
-            }),
-          });
-        }
-        if (short.length > 0) {
-          return yield* insufficientInventory(short);
-        }
+        // 5. Take the stock. Every line is attempted, so the error lists every
+        // short one; the rollback undoes the others.
+        yield* products.decrementInventory(lines);
 
         const ids = yield* Ids;
         const orderId = yield* ids.uuidv7;
         const createdAt = DateTime.formatIso(yield* DateTime.now);
 
-        // 6. Redeem the coupon, only while it is unredeemed. No row changed
-        // means the code is unknown or another order has it.
+        // 6. Redeem the coupon, only while it is unredeemed.
         const { couponCode = null } = request;
-        let discountPercent: number | null = null;
-        if (couponCode !== null) {
-          const coupon = yield* coupons.redeem(couponCode, orderId, createdAt);
-          if (Option.isNone(coupon)) {
-            return Option.isNone(yield* coupons.findByCode(couponCode))
-              ? yield* couponInvalid(couponCode)
-              : yield* couponAlreadyRedeemed(couponCode);
-          }
-          discountPercent = coupon.value.discountPercent;
-        }
+        const discountPercent =
+          couponCode === null
+            ? null
+            : (yield* coupons.redeem(couponCode, orderId, createdAt)).discountPercent;
         const discount = discountPercent === null ? 0 : discountCents(subtotal, discountPercent);
 
         // 7. Record the order and its snapshots.

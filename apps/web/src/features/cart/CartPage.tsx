@@ -39,7 +39,9 @@ const CartLineForm = ({ line, cart }: { readonly line: CartLine; readonly cart: 
         </p>
         {line.insufficientStock && (
           <Badge variant="destructive" className="mt-1">
-            Only {line.availableInventory} left: reduce the quantity before checkout
+            {line.availableInventory === 0
+              ? "Out of stock: remove it to check out"
+              : `Only ${line.availableInventory} left: reduce the quantity to check out`}
           </Badge>
         )}
       </div>

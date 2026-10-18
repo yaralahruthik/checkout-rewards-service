@@ -1,5 +1,5 @@
 import { Context, DateTime, Effect, Layer, Option } from "effect";
-import { lineTotalCents, subtotalCents } from "../../shared/money.ts";
+import { priceLines } from "../../shared/money.ts";
 import { Ids } from "../../shared/ids.ts";
 import {
   InsufficientInventory,
@@ -22,17 +22,16 @@ import { CartRepository, type CartRow, type LineRow } from "./CartRepository.ts"
 
 /** Prices the lines at the prices they were read with. */
 const toCart = (cart: CartRow, rows: ReadonlyArray<LineRow>): Cart => {
-  const lines = rows.map((row) => ({
-    ...row,
-    lineTotalCents: lineTotalCents(row.unitPriceCents, row.quantity),
-    insufficientStock: row.quantity > row.availableInventory,
-  }));
+  const { lines, subtotalCents } = priceLines(rows);
   return {
     id: cart.id,
     status: cart.status,
     itemCount: lines.reduce((sum, line) => sum + line.quantity, 0),
-    subtotalCents: subtotalCents(lines),
-    lines,
+    subtotalCents,
+    lines: lines.map((line) => ({
+      ...line,
+      insufficientStock: line.quantity > line.availableInventory,
+    })),
     ...(cart.orderId === null ? {} : { orderId: cart.orderId }),
   };
 };
@@ -101,9 +100,7 @@ export class CartService extends Context.Service<
             { productId, requestedQuantity: quantity, availableInventory },
           ]);
         }
-        if (!(yield* repository.setQuantity(id, productId, quantity))) {
-          return yield* cartNotOpen(id);
-        }
+        yield* repository.setQuantity(id, productId, quantity);
         return toCart(cart, yield* repository.lines(id));
       });
 
@@ -112,9 +109,7 @@ export class CartService extends Context.Service<
         productId: ProductId,
       ) {
         const cart = yield* find(id);
-        if (!(yield* repository.removeLine(id, productId))) {
-          return yield* cartNotOpen(id);
-        }
+        yield* repository.removeLine(id, productId);
         return toCart(cart, yield* repository.lines(id));
       });
 
